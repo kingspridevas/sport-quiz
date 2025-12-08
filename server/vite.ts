@@ -1,7 +1,7 @@
-import express, { type Express } from "express";
+import express, { type Express, type Request, type Response, type NextFunction } from "express";
 import fs from "fs";
 import path from "path";
-import { createServer as createViteServer } from "vite";
+import { createServer as createViteServer, type ViteDevServer } from "vite";
 import { type Server } from "http";
 
 export function log(message: string) {
@@ -17,31 +17,41 @@ export function log(message: string) {
 
 export async function setupVite(app: Express, server: Server) {
   const vite = await createViteServer({
-    server: { middlewareMode: true },
-    appType: "custom",
-    optimizeDeps: {
-      include: ["lucide-react"],
+    configFile: path.resolve(process.cwd(), "vite.config.ts"),
+    server: { 
+      middlewareMode: true,
+      hmr: { server }
     },
+    appType: "spa",
+    root: path.resolve(process.cwd(), "client"),
   });
 
   app.use(vite.middlewares);
 
-  app.use("*", async (req, res, next) => {
-    const url = req.originalUrl;
-
-    try {
-      const clientPath = path.resolve(process.cwd(), "client.html");
-      let template = fs.readFileSync(clientPath, "utf-8");
-      template = await vite.transformIndexHtml(url, template);
-      const { render } = await vite.ssrLoadModule("/src/entry-server.tsx");
-      const appHtml = await render(url);
-      const html = template.replace(`<!--app-html-->`, appHtml);
-
-      res.status(200).set({ "Content-Type": "text/html" }).end(html);
-    } catch (e) {
-      vite.ssrFixStacktrace(e as Error);
-      next(e);
+  app.use((req: Request, res: Response, next: NextFunction) => {
+    if (req.path.startsWith("/api")) {
+      return next();
     }
+    
+    const url = req.originalUrl;
+    const clientHtmlPath = path.resolve(process.cwd(), "client", "index.html");
+    
+    if (!fs.existsSync(clientHtmlPath)) {
+      return res.status(404).send("Client index.html not found");
+    }
+
+    fs.readFile(clientHtmlPath, "utf-8", async (err, html) => {
+      if (err) {
+        return next(err);
+      }
+      try {
+        html = await vite.transformIndexHtml(url, html);
+        res.status(200).set({ "Content-Type": "text/html" }).end(html);
+      } catch (e) {
+        vite.ssrFixStacktrace(e as Error);
+        next(e);
+      }
+    });
   });
 
   return server;
@@ -58,7 +68,7 @@ export function serveStatic(app: Express) {
 
   app.use(express.static(distPath));
 
-  app.use("*", (_req, res) => {
+  app.use((req: Request, res: Response) => {
     res.sendFile(path.resolve(distPath, "index.html"));
   });
 }
