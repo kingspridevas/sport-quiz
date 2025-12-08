@@ -1,7 +1,13 @@
 import { useState, useEffect } from 'react';
-import { supabase, Wallet } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
 import { Wallet as WalletIcon, Plus, ArrowUpRight, Copy, Clock, CreditCard } from 'lucide-react';
+
+interface Wallet {
+  id: string;
+  userId: string;
+  balance: string;
+  totalFunded: string;
+}
 
 interface VirtualAccount {
   accountNumber: string;
@@ -31,14 +37,16 @@ export function WalletManager() {
   const loadWallet = async () => {
     if (!user) return;
 
-    const { data, error } = await supabase
-      .from('wallets')
-      .select('*')
-      .eq('user_id', user.id)
-      .maybeSingle();
-
-    if (data) {
-      setWallet(data);
+    try {
+      const response = await fetch(`/api/wallet/${user.id}`);
+      if (response.ok) {
+        const data = await response.json();
+        setWallet(data);
+      } else {
+        console.error('Failed to load wallet');
+      }
+    } catch (error) {
+      console.error('Error loading wallet:', error);
     }
     setLoading(false);
   };
@@ -55,20 +63,15 @@ export function WalletManager() {
     setProcessing(true);
 
     try {
-      const apiUrl = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/create-virtual-account`;
-
-      const { data: { session } } = await supabase.auth.getSession();
-
-      const response = await fetch(apiUrl, {
+      const response = await fetch('/api/payments/create-virtual-account', {
         method: 'POST',
         headers: {
-          'Authorization': `Bearer ${session?.access_token}`,
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
           amount: amount,
           userId: user.id,
-          userName: profile.full_name || 'User',
+          userName: profile.fullName || 'User',
         }),
       });
 
@@ -98,6 +101,7 @@ export function WalletManager() {
     setShowFundModal(false);
     setVirtualAccount(null);
     setFundAmount('');
+    loadWallet();
   };
 
   if (loading) {
@@ -105,8 +109,19 @@ export function WalletManager() {
   }
 
   if (!wallet) {
-    return <div className="text-center py-8">Wallet not found</div>;
+    return (
+      <div className="bg-white rounded-xl shadow-lg p-6">
+        <div className="text-center py-8">
+          <WalletIcon className="mx-auto text-gray-400 mb-4" size={48} />
+          <p className="text-gray-500 mb-4">Wallet not available yet</p>
+          <p className="text-sm text-gray-400">Please try signing out and signing back in</p>
+        </div>
+      </div>
+    );
   }
+
+  const balance = parseFloat(wallet.balance) || 0;
+  const totalFunded = parseFloat(wallet.totalFunded) || 0;
 
   return (
     <div className="bg-white rounded-xl shadow-lg p-6">
@@ -123,6 +138,7 @@ export function WalletManager() {
         <button
           onClick={() => setShowFundModal(true)}
           className="bg-green-600 text-white px-4 py-2 rounded-lg font-semibold hover:bg-green-700 transition-colors flex items-center gap-2"
+          data-testid="button-fund-wallet"
         >
           <Plus size={20} />
           Fund Wallet
@@ -132,11 +148,11 @@ export function WalletManager() {
       <div className="grid grid-cols-2 gap-4">
         <div className="bg-gradient-to-br from-green-500 to-green-600 rounded-lg p-4 text-white">
           <p className="text-sm opacity-90 mb-1">Current Balance</p>
-          <p className="text-3xl font-bold">₦{wallet.balance.toLocaleString()}</p>
+          <p className="text-3xl font-bold" data-testid="text-wallet-balance">₦{balance.toLocaleString()}</p>
         </div>
         <div className="bg-gradient-to-br from-blue-500 to-blue-600 rounded-lg p-4 text-white">
           <p className="text-sm opacity-90 mb-1">Total Funded</p>
-          <p className="text-3xl font-bold">₦{wallet.total_funded.toLocaleString()}</p>
+          <p className="text-3xl font-bold" data-testid="text-total-funded">₦{totalFunded.toLocaleString()}</p>
         </div>
       </div>
 
@@ -163,6 +179,7 @@ export function WalletManager() {
                     className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
                     placeholder="Enter amount"
                     min="1"
+                    data-testid="input-fund-amount"
                   />
                 </div>
                 <div className="flex gap-3">
@@ -170,6 +187,7 @@ export function WalletManager() {
                     onClick={handleFundWallet}
                     disabled={processing}
                     className="flex-1 bg-green-600 text-white py-2 rounded-lg font-semibold hover:bg-green-700 transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
+                    data-testid="button-generate-account"
                   >
                     <ArrowUpRight size={20} />
                     {processing ? 'Generating...' : 'Generate Account'}
@@ -177,6 +195,7 @@ export function WalletManager() {
                   <button
                     onClick={closePaymentModal}
                     className="flex-1 bg-gray-200 text-gray-700 py-2 rounded-lg font-semibold hover:bg-gray-300 transition-colors"
+                    data-testid="button-cancel-fund"
                   >
                     Cancel
                   </button>
@@ -199,26 +218,27 @@ export function WalletManager() {
                       <button
                         onClick={() => copyToClipboard(virtualAccount.accountNumber)}
                         className="text-green-600 hover:text-green-700 transition-colors"
+                        data-testid="button-copy-account"
                       >
                         <Copy size={16} />
                       </button>
                     </div>
-                    <p className="text-2xl font-bold text-gray-900">{virtualAccount.accountNumber}</p>
+                    <p className="text-2xl font-bold text-gray-900" data-testid="text-account-number">{virtualAccount.accountNumber}</p>
                   </div>
 
                   <div className="bg-gray-50 rounded-lg p-4">
                     <span className="text-sm text-gray-600 block mb-1">Account Name</span>
-                    <p className="text-lg font-semibold text-gray-900">{virtualAccount.accountName}</p>
+                    <p className="text-lg font-semibold text-gray-900" data-testid="text-account-name">{virtualAccount.accountName}</p>
                   </div>
 
                   <div className="bg-gray-50 rounded-lg p-4">
                     <span className="text-sm text-gray-600 block mb-1">Bank Name</span>
-                    <p className="text-lg font-semibold text-gray-900">{virtualAccount.bankName}</p>
+                    <p className="text-lg font-semibold text-gray-900" data-testid="text-bank-name">{virtualAccount.bankName}</p>
                   </div>
 
                   <div className="bg-gray-50 rounded-lg p-4">
                     <span className="text-sm text-gray-600 block mb-1">Amount</span>
-                    <p className="text-2xl font-bold text-green-600">₦{virtualAccount.amount.toLocaleString()}</p>
+                    <p className="text-2xl font-bold text-green-600" data-testid="text-payment-amount">₦{virtualAccount.amount.toLocaleString()}</p>
                   </div>
                 </div>
 
@@ -248,13 +268,14 @@ export function WalletManager() {
 
                 {copied && (
                   <div className="text-center text-sm text-green-600 font-medium mb-4">
-                    ✓ Account number copied to clipboard
+                    Account number copied to clipboard
                   </div>
                 )}
 
                 <button
                   onClick={closePaymentModal}
                   className="w-full bg-gray-200 text-gray-700 py-3 rounded-lg font-semibold hover:bg-gray-300 transition-colors"
+                  data-testid="button-close-payment"
                 >
                   Close
                 </button>

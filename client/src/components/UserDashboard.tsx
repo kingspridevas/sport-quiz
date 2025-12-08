@@ -1,11 +1,39 @@
 import { useState, useEffect } from 'react';
-import { supabase, UserPoints, QuizSession as QuizSessionType, WheelSpin } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
 import { Trophy, Clock, Gift, TrendingUp, LogOut, Settings, User as UserIcon, ChevronDown } from 'lucide-react';
 import { WalletManager } from './WalletManager';
 import { QuizSession } from './QuizSession';
 import { MagicWheel } from './MagicWheel';
 import { ProfileSettings } from './ProfileSettings';
+
+interface UserPoints {
+  id: string;
+  userId: string;
+  points: number;
+  totalEarned: number;
+  totalSpent: number;
+}
+
+interface QuizSessionType {
+  id: string;
+  userId: string;
+  status: string;
+  correctAnswers: number;
+  totalQuestions: number;
+  pointsEarned: number;
+  startedAt: string;
+  completedAt: string | null;
+}
+
+interface WheelSpin {
+  id: string;
+  userId: string;
+  prizeId: string;
+  prizeName: string;
+  prizeValue: number | null;
+  status: string;
+  spunAt: string;
+}
 
 type ViewMode = 'dashboard' | 'quiz' | 'wheel' | 'settings';
 
@@ -32,60 +60,42 @@ export function UserDashboard() {
   const loadUserData = async () => {
     if (!user) return;
 
-    const { data: points } = await supabase
-      .from('user_points')
-      .select('*')
-      .eq('user_id', user.id)
-      .maybeSingle();
+    try {
+      const pointsRes = await fetch(`/api/points/${user.id}`);
+      if (pointsRes.ok) {
+        const points = await pointsRes.json();
+        setUserPoints(points);
+      }
 
-    if (points) setUserPoints(points);
+      const sessionsRes = await fetch(`/api/quiz/user/${user.id}`);
+      if (sessionsRes.ok) {
+        const sessions = await sessionsRes.json();
+        setRecentSessions(sessions.slice(0, 5));
+        
+        const passed = sessions.filter((s: QuizSessionType) => s.pointsEarned > 0).length;
+        setStats((prev) => ({
+          ...prev,
+          totalSessions: sessions.length,
+          passedSessions: passed,
+        }));
+      }
 
-    const { data: sessions } = await supabase
-      .from('quiz_sessions')
-      .select('*')
-      .eq('user_id', user.id)
-      .order('started_at', { ascending: false })
-      .limit(5);
-
-    if (sessions) setRecentSessions(sessions);
-
-    const { data: spins } = await supabase
-      .from('wheel_spins')
-      .select('*')
-      .eq('user_id', user.id)
-      .order('spun_at', { ascending: false })
-      .limit(5);
-
-    if (spins) setRecentSpins(spins);
-
-    const { data: allSessions } = await supabase
-      .from('quiz_sessions')
-      .select('*')
-      .eq('user_id', user.id);
-
-    const { data: allSpins } = await supabase
-      .from('wheel_spins')
-      .select('*')
-      .eq('user_id', user.id);
-
-    if (allSessions) {
-      const passed = allSessions.filter((s) => s.points_earned > 0).length;
-      setStats((prev) => ({
-        ...prev,
-        totalSessions: allSessions.length,
-        passedSessions: passed,
-      }));
-    }
-
-    if (allSpins) {
-      const totalWinnings = allSpins
-        .filter((s) => s.prize_value)
-        .reduce((sum, s) => sum + (s.prize_value || 0), 0);
-      setStats((prev) => ({
-        ...prev,
-        totalSpins: allSpins.length,
-        totalWinnings,
-      }));
+      const spinsRes = await fetch(`/api/wheel/spins/${user.id}`);
+      if (spinsRes.ok) {
+        const spins = await spinsRes.json();
+        setRecentSpins(spins.slice(0, 5));
+        
+        const totalWinnings = spins
+          .filter((s: WheelSpin) => s.prizeValue)
+          .reduce((sum: number, s: WheelSpin) => sum + (s.prizeValue || 0), 0);
+        setStats((prev) => ({
+          ...prev,
+          totalSpins: spins.length,
+          totalWinnings,
+        }));
+      }
+    } catch (error) {
+      console.error('Error loading user data:', error);
     }
   };
 
@@ -104,8 +114,9 @@ export function UserDashboard() {
           <button
             onClick={() => setViewMode('dashboard')}
             className="mb-6 text-gray-600 hover:text-gray-900 font-medium"
+            data-testid="button-back-dashboard"
           >
-            ← Back to Dashboard
+            Back to Dashboard
           </button>
           <QuizSession onComplete={() => setViewMode('dashboard')} />
         </div>
@@ -120,8 +131,9 @@ export function UserDashboard() {
           <button
             onClick={() => setViewMode('dashboard')}
             className="mb-6 text-gray-600 hover:text-gray-900 font-medium"
+            data-testid="button-back-dashboard"
           >
-            ← Back to Dashboard
+            Back to Dashboard
           </button>
           <MagicWheel onComplete={() => setViewMode('dashboard')} />
         </div>
@@ -136,8 +148,9 @@ export function UserDashboard() {
           <button
             onClick={() => setViewMode('dashboard')}
             className="mb-6 text-gray-600 hover:text-gray-900 font-medium"
+            data-testid="button-back-dashboard"
           >
-            ← Back to Dashboard
+            Back to Dashboard
           </button>
           <ProfileSettings />
         </div>
@@ -149,15 +162,15 @@ export function UserDashboard() {
     <div className="min-h-screen bg-gradient-to-br from-green-50 via-white to-blue-50">
       <nav className="bg-white shadow-sm border-b">
         <div className="max-w-7xl mx-auto px-6 py-4">
-          <div className="flex justify-between items-center">
+          <div className="flex justify-between items-center gap-4">
             <div className="flex items-center gap-3">
               <div className="w-10 h-10 bg-green-600 rounded-full flex items-center justify-center">
-                <span className="text-2xl">⚽</span>
+                <Trophy className="text-white" size={20} />
               </div>
               <div>
                 <h1 className="text-xl font-bold">Sports Quiz Platform</h1>
                 <p className="text-sm text-gray-600">
-                  Welcome, {profile?.full_name ? profile.full_name.split(' ')[0] : 'Player'}
+                  Welcome, {profile?.fullName ? profile.fullName.split(' ')[0] : 'Player'}
                 </p>
               </div>
             </div>
@@ -165,13 +178,14 @@ export function UserDashboard() {
               <button
                 onClick={() => setShowUserMenu(!showUserMenu)}
                 className="flex items-center gap-3 px-4 py-2 text-gray-700 hover:bg-gray-100 rounded-lg transition-colors"
+                data-testid="button-user-menu"
               >
                 <div className="w-10 h-10 bg-gradient-to-br from-green-500 to-green-600 rounded-full flex items-center justify-center text-white font-semibold">
-                  {profile?.full_name ? profile.full_name.charAt(0).toUpperCase() : user?.email?.charAt(0).toUpperCase()}
+                  {profile?.fullName ? profile.fullName.charAt(0).toUpperCase() : user?.email?.charAt(0).toUpperCase()}
                 </div>
                 <div className="text-left hidden sm:block">
                   <p className="font-semibold text-sm">
-                    {profile?.full_name || 'User'}
+                    {profile?.fullName || 'User'}
                   </p>
                   <p className="text-xs text-gray-500">{user?.email}</p>
                 </div>
@@ -187,7 +201,7 @@ export function UserDashboard() {
                   <div className="absolute right-0 mt-2 w-64 bg-white rounded-lg shadow-xl border border-gray-200 py-2 z-20">
                     <div className="px-4 py-3 border-b border-gray-100">
                       <p className="font-semibold text-gray-900">
-                        {profile?.full_name || 'User'}
+                        {profile?.fullName || 'User'}
                       </p>
                       <p className="text-sm text-gray-500">{user?.email}</p>
                     </div>
@@ -198,6 +212,7 @@ export function UserDashboard() {
                         setShowUserMenu(false);
                       }}
                       className="w-full flex items-center gap-3 px-4 py-3 text-gray-700 hover:bg-gray-50 transition-colors"
+                      data-testid="button-profile-settings"
                     >
                       <UserIcon size={20} />
                       <div className="text-left">
@@ -212,6 +227,7 @@ export function UserDashboard() {
                         setShowUserMenu(false);
                       }}
                       className="w-full flex items-center gap-3 px-4 py-3 text-gray-700 hover:bg-gray-50 transition-colors"
+                      data-testid="button-account-settings"
                     >
                       <Settings size={20} />
                       <div className="text-left">
@@ -227,6 +243,7 @@ export function UserDashboard() {
                           setShowUserMenu(false);
                         }}
                         className="w-full flex items-center gap-3 px-4 py-3 text-red-600 hover:bg-red-50 transition-colors"
+                        data-testid="button-signout"
                       >
                         <LogOut size={20} />
                         <span className="font-medium">Sign Out</span>
@@ -243,33 +260,33 @@ export function UserDashboard() {
       <div className="max-w-7xl mx-auto p-6">
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
           <div className="bg-gradient-to-br from-green-500 to-green-600 rounded-xl shadow-lg p-6 text-white">
-            <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center justify-between gap-4 mb-4">
               <Trophy size={32} />
               <span className="text-sm opacity-90">Total Points</span>
             </div>
-            <p className="text-4xl font-bold">{userPoints?.points || 0}</p>
+            <p className="text-4xl font-bold" data-testid="text-total-points">{userPoints?.points || 0}</p>
             <p className="text-sm opacity-90 mt-2">
               {10 - (userPoints?.points || 0)} more to spin the wheel
             </p>
           </div>
 
           <div className="bg-gradient-to-br from-blue-500 to-blue-600 rounded-xl shadow-lg p-6 text-white">
-            <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center justify-between gap-4 mb-4">
               <Clock size={32} />
               <span className="text-sm opacity-90">Quiz Sessions</span>
             </div>
-            <p className="text-4xl font-bold">{stats.totalSessions}</p>
+            <p className="text-4xl font-bold" data-testid="text-total-sessions">{stats.totalSessions}</p>
             <p className="text-sm opacity-90 mt-2">
               {stats.passedSessions} passed
             </p>
           </div>
 
           <div className="bg-gradient-to-br from-yellow-500 to-yellow-600 rounded-xl shadow-lg p-6 text-white">
-            <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center justify-between gap-4 mb-4">
               <Gift size={32} />
               <span className="text-sm opacity-90">Total Winnings</span>
             </div>
-            <p className="text-4xl font-bold">₦{stats.totalWinnings.toLocaleString()}</p>
+            <p className="text-4xl font-bold" data-testid="text-total-winnings">₦{stats.totalWinnings.toLocaleString()}</p>
             <p className="text-sm opacity-90 mt-2">
               {stats.totalSpins} spins
             </p>
@@ -285,6 +302,7 @@ export function UserDashboard() {
               <button
                 onClick={() => setViewMode('quiz')}
                 className="w-full bg-green-600 text-white py-4 rounded-lg font-semibold hover:bg-green-700 transition-colors flex items-center justify-center gap-2"
+                data-testid="button-start-quiz"
               >
                 <Trophy size={24} />
                 Start Quiz Session
@@ -293,6 +311,7 @@ export function UserDashboard() {
                 onClick={() => setViewMode('wheel')}
                 disabled={(userPoints?.points || 0) < 10}
                 className="w-full bg-yellow-600 text-white py-4 rounded-lg font-semibold hover:bg-yellow-700 transition-colors flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                data-testid="button-spin-wheel"
               >
                 <Gift size={24} />
                 Spin Magic Wheel {(userPoints?.points || 0) < 10 && `(Need ${10 - (userPoints?.points || 0)} more points)`}
@@ -302,11 +321,11 @@ export function UserDashboard() {
             <div className="mt-6 p-4 bg-blue-50 rounded-lg">
               <h3 className="font-semibold text-blue-900 mb-2">How it works:</h3>
               <ul className="text-sm text-blue-800 space-y-1">
-                <li>• Fund your wallet to play quiz sessions</li>
-                <li>• Each session costs ₦100 for 5 questions</li>
-                <li>• Answer at least 3 correctly to earn 1 point</li>
-                <li>• Collect 10 points to spin the Magic Wheel</li>
-                <li>• Win cash prizes, items, or entries to weekly draws</li>
+                <li>Fund your wallet to play quiz sessions</li>
+                <li>Each session costs ₦100 for 5 questions</li>
+                <li>Answer at least 3 correctly to earn 1 point</li>
+                <li>Collect 10 points to spin the Magic Wheel</li>
+                <li>Win cash prizes, items, or entries to weekly draws</li>
               </ul>
             </div>
           </div>
@@ -324,11 +343,12 @@ export function UserDashboard() {
                   <div
                     key={session.id}
                     className="border border-gray-200 rounded-lg p-4 hover:shadow-md transition-shadow"
+                    data-testid={`card-session-${session.id}`}
                   >
-                    <div className="flex justify-between items-start mb-2">
+                    <div className="flex justify-between items-start mb-2 gap-2 flex-wrap">
                       <span
                         className={`px-2 py-1 rounded text-xs font-semibold ${
-                          session.points_earned > 0
+                          session.pointsEarned > 0
                             ? 'bg-green-100 text-green-700'
                             : 'bg-gray-100 text-gray-700'
                         }`}
@@ -336,14 +356,14 @@ export function UserDashboard() {
                         {session.status}
                       </span>
                       <span className="text-sm text-gray-600">
-                        {new Date(session.started_at).toLocaleDateString()}
+                        {new Date(session.startedAt).toLocaleDateString()}
                       </span>
                     </div>
                     <p className="text-sm">
-                      Score: {session.correct_answers}/{session.total_questions}
+                      Score: {session.correctAnswers}/{session.totalQuestions}
                     </p>
                     <p className="text-sm text-gray-600">
-                      Points earned: {session.points_earned}
+                      Points earned: {session.pointsEarned}
                     </p>
                   </div>
                 ))}
@@ -366,18 +386,19 @@ export function UserDashboard() {
                   <div
                     key={spin.id}
                     className="border border-gray-200 rounded-lg p-4 hover:shadow-md transition-shadow"
+                    data-testid={`card-spin-${spin.id}`}
                   >
-                    <div className="flex justify-between items-start mb-2">
+                    <div className="flex justify-between items-start mb-2 gap-2 flex-wrap">
                       <span className="font-semibold text-gray-900">
-                        {spin.prize_name}
+                        {spin.prizeName}
                       </span>
                       <span className="text-sm text-gray-600">
-                        {new Date(spin.spun_at).toLocaleDateString()}
+                        {new Date(spin.spunAt).toLocaleDateString()}
                       </span>
                     </div>
-                    {spin.prize_value && (
+                    {spin.prizeValue && (
                       <p className="text-green-600 font-semibold">
-                        ₦{spin.prize_value.toLocaleString()}
+                        ₦{spin.prizeValue.toLocaleString()}
                       </p>
                     )}
                     <span
