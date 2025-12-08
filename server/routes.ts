@@ -1,7 +1,8 @@
 import type { Express } from "express";
 import bcrypt from "bcryptjs";
 import { storage } from "./storage.js";
-import { authSignupSchema, authLoginSchema, insertQuestionSchema, insertQuizSessionSchema, insertQuizAnswerSchema, insertWheelSpinSchema, insertPaymentTransactionSchema } from "../shared/schema.js";
+import { authSignupSchema, authLoginSchema, insertQuestionSchema, insertQuizSessionSchema, insertQuizAnswerSchema } from "../shared/schema.js";
+import { createVirtualAccount } from "./psb-service.js";
 
 export function registerRoutes(app: Express) {
   app.post("/api/auth/signup", async (req, res) => {
@@ -366,19 +367,36 @@ export function registerRoutes(app: Express) {
     try {
       const { amount, userId, userName } = req.body;
       
-      // This would normally call the 9PSB API
-      // For now, create a placeholder payment transaction
+      if (!amount || !userId || !userName) {
+        return res.status(400).json({ error: "Missing required fields: amount, userId, userName" });
+      }
+
       const reference = `SQ${Date.now()}${userId.substring(0, 8)}`;
       
+      const psbResponse = await createVirtualAccount({
+        amount: parseFloat(amount),
+        customerName: userName,
+        reference,
+        description: "Wallet Funding",
+      });
+
+      if (!psbResponse.customer?.account) {
+        throw new Error("Failed to get virtual account details from 9PSB");
+      }
+
+      const expiresAt = psbResponse.customer.account.expiry?.date 
+        ? new Date(psbResponse.customer.account.expiry.date)
+        : new Date(Date.now() + 60 * 60 * 1000);
+
       const transaction = await storage.createPaymentTransaction({
         userId,
         reference,
         amount: amount.toString(),
         status: "pending",
-        virtualAccountNumber: `90${Math.floor(Math.random() * 10000000).toString().padStart(8, '0')}`,
-        virtualAccountName: userName,
-        virtualAccountBank: "9PSB",
-        expiresAt: new Date(Date.now() + 60 * 60 * 1000) // 1 hour
+        virtualAccountNumber: psbResponse.customer.account.number,
+        virtualAccountName: psbResponse.customer.account.name,
+        virtualAccountBank: psbResponse.customer.account.bank,
+        expiresAt,
       });
 
       res.json({ 
@@ -392,6 +410,73 @@ export function registerRoutes(app: Express) {
           expiresAt: transaction.expiresAt
         }
       });
+    } catch (error: any) {
+      console.error("Virtual account creation error:", error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.post("/api/payments/webhook", async (req, res) => {
+    try {
+      const { 
+        accountnumber,
+        sessionid 
+      } = req.body;
+
+      console.log("9PSB Webhook received:", req.body);
+
+      const transaction = await storage.getPaymentTransactionByAccount(accountnumber);
+      
+      if (!transaction) {
+        console.error("Payment transaction not found for account:", accountnumber);
+        return res.json({ code: "00", message: "Transaction not found" });
+      }
+
+      if (transaction.status !== "pending") {
+        console.log("Transaction already processed:", transaction.reference);
+        return res.json({ code: "00", message: "Already processed" });
+      }
+
+      await storage.updatePaymentTransaction(transaction.id, {
+        status: "completed",
+        sessionId: sessionid,
+        completedAt: new Date(),
+      });
+
+      const wallet = await storage.getWallet(transaction.userId);
+      if (wallet) {
+        const newBalance = parseFloat(wallet.balance) + parseFloat(transaction.amount);
+        const newTotalFunded = parseFloat(wallet.totalFunded) + parseFloat(transaction.amount);
+        
+        await storage.updateWallet(wallet.id, {
+          balance: newBalance.toString(),
+          totalFunded: newTotalFunded.toString(),
+        });
+
+        await storage.createWalletTransaction({
+          walletId: wallet.id,
+          type: "funding",
+          amount: transaction.amount,
+          description: "Wallet funding via bank transfer",
+          reference: transaction.reference,
+        });
+      }
+
+      console.log("Payment processed successfully:", transaction.reference);
+      res.json({ code: "00", message: "Success" });
+    } catch (error: any) {
+      console.error("Webhook processing error:", error);
+      res.status(500).json({ code: "99", message: error.message });
+    }
+  });
+
+  app.get("/api/payments/status/:reference", async (req, res) => {
+    try {
+      const transaction = await storage.getPaymentTransaction(req.params.reference);
+      if (!transaction) {
+        return res.status(404).json({ error: "Transaction not found" });
+      }
+      res.json(transaction);
     } catch (error: any) {
       res.status(500).json({ error: error.message });
     }
