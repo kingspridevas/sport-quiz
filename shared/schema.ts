@@ -5,6 +5,7 @@ import { z } from "zod";
 export const profiles = pgTable("profiles", {
   id: uuid("id").primaryKey().defaultRandom(),
   email: text("email").notNull().unique(),
+  passwordHash: text("password_hash"),
   fullName: text("full_name"),
   sex: text("sex"), // 'Male' or 'Female'
   phoneNumber: text("phone_number"),
@@ -25,6 +26,21 @@ export const insertProfileSchema = createInsertSchema(profiles).omit({
   createdAt: true,
   updatedAt: true,
 });
+
+export const authSignupSchema = z.object({
+  email: z.string().email(),
+  password: z.string().min(6),
+  fullName: z.string().min(1),
+  sex: z.string().optional(),
+  phoneNumber: z.string().optional(),
+  location: z.string().optional(),
+});
+
+export const authLoginSchema = z.object({
+  email: z.string().email(),
+  password: z.string(),
+});
+
 export type InsertProfile = z.infer<typeof insertProfileSchema>;
 export type Profile = typeof profiles.$inferSelect;
 

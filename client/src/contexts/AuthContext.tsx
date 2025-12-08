@@ -1,22 +1,25 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from 'react';
 
 export interface Profile {
-  id: number;
+  id: string;
   email: string;
-  fullName: string;
+  fullName: string | null;
   sex: string | null;
   phoneNumber: string | null;
   location: string | null;
   photoUrl: string | null;
   isAdmin: boolean;
-  preferredLanguage: string;
+  preferredLanguage: string | null;
   bankName: string | null;
-  accountNumber: string | null;
-  accountName: string | null;
+  bankAccountNumber: string | null;
+  bankAccountName: string | null;
+  accountVerified: boolean | null;
+  createdAt: string;
+  updatedAt: string;
 }
 
 interface AuthUser {
-  id: number;
+  id: string;
   email: string;
 }
 
@@ -48,17 +51,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     const storedUser = localStorage.getItem('auth_user');
     if (storedUser) {
-      const userData = JSON.parse(storedUser);
-      setUser(userData);
-      loadProfile(userData.id);
+      try {
+        const userData = JSON.parse(storedUser);
+        setUser(userData);
+        loadProfile(userData.id);
+      } catch {
+        localStorage.removeItem('auth_user');
+        setLoading(false);
+      }
     } else {
       setLoading(false);
     }
   }, []);
 
-  const loadProfile = async (userId: number) => {
+  const loadProfile = async (userId: string) => {
     try {
-      const response = await fetch(`/api/profiles/${userId}`);
+      const response = await fetch(`/api/profile/${userId}`);
       if (response.ok) {
         const data = await response.json();
         setProfile(data);
@@ -76,7 +84,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     sex: string,
     phoneNumber: string,
     location: string,
-    photo: File | null
+    _photo: File | null
   ) => {
     const response = await fetch('/api/auth/signup', {
       method: 'POST',
@@ -85,9 +93,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         email,
         password,
         fullName,
-        sex,
-        phoneNumber,
-        location,
+        sex: sex || undefined,
+        phoneNumber: phoneNumber || undefined,
+        location: location || undefined,
       }),
     });
 

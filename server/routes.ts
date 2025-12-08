@@ -1,28 +1,35 @@
 import type { Express } from "express";
+import bcrypt from "bcryptjs";
 import { storage } from "./storage.js";
-import { insertProfileSchema, insertQuestionSchema, insertQuizSessionSchema, insertQuizAnswerSchema, insertWheelSpinSchema, insertPaymentTransactionSchema } from "../shared/schema.js";
+import { authSignupSchema, authLoginSchema, insertQuestionSchema, insertQuizSessionSchema, insertQuizAnswerSchema, insertWheelSpinSchema, insertPaymentTransactionSchema } from "../shared/schema.js";
 
 export function registerRoutes(app: Express) {
-  // Auth - For now, we'll use a simple session-based auth
-  // In production, this would be replaced with proper JWT or session management
-  
   app.post("/api/auth/signup", async (req, res) => {
     try {
-      const validatedData = insertProfileSchema.parse(req.body);
+      const validatedData = authSignupSchema.parse(req.body);
       const existingProfile = await storage.getProfileByEmail(validatedData.email);
       
       if (existingProfile) {
-        return res.status(400).json({ error: "User already exists" });
+        return res.status(400).json({ error: "User already exists with this email" });
       }
 
-      // Create profile (in real app, this would create auth user first)
-      const profile = await storage.createProfile(validatedData);
+      const passwordHash = await bcrypt.hash(validatedData.password, 10);
+
+      const profile = await storage.createProfile({
+        email: validatedData.email,
+        passwordHash,
+        fullName: validatedData.fullName,
+        sex: validatedData.sex || null,
+        phoneNumber: validatedData.phoneNumber || null,
+        location: validatedData.location || null,
+        isAdmin: false,
+      });
       
-      // Create wallet and points for new user
       await storage.createWallet({ userId: profile.id, balance: "0", totalFunded: "0" });
       await storage.createUserPoints({ userId: profile.id, points: 0, totalEarned: 0, totalSpent: 0 });
       
-      res.json({ profile });
+      const { passwordHash: _, ...safeProfile } = profile;
+      res.json({ profile: safeProfile });
     } catch (error: any) {
       res.status(400).json({ error: error.message });
     }
@@ -30,14 +37,24 @@ export function registerRoutes(app: Express) {
 
   app.post("/api/auth/login", async (req, res) => {
     try {
-      const { email } = req.body;
-      const profile = await storage.getProfileByEmail(email);
+      const validatedData = authLoginSchema.parse(req.body);
+      const profile = await storage.getProfileByEmail(validatedData.email);
       
       if (!profile) {
-        return res.status(404).json({ error: "User not found" });
+        return res.status(401).json({ error: "Invalid email or password" });
       }
       
-      res.json({ profile });
+      if (!profile.passwordHash) {
+        return res.status(401).json({ error: "Invalid email or password" });
+      }
+
+      const validPassword = await bcrypt.compare(validatedData.password, profile.passwordHash);
+      if (!validPassword) {
+        return res.status(401).json({ error: "Invalid email or password" });
+      }
+      
+      const { passwordHash: _, ...safeProfile } = profile;
+      res.json({ profile: safeProfile });
     } catch (error: any) {
       res.status(400).json({ error: error.message });
     }
