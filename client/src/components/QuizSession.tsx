@@ -1,5 +1,4 @@
 import { useState, useEffect } from 'react';
-import { supabase, Question, QuizSession as QuizSessionType } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
 import { CheckCircle, XCircle, Trophy, Clock } from 'lucide-react';
 
@@ -8,9 +7,50 @@ const QUESTIONS_PER_SESSION = 5;
 const MIN_CORRECT_ANSWERS = 3;
 const TIME_PER_QUESTION = 30;
 
+interface Question {
+  id: string;
+  questionText: string;
+  optionA: string;
+  optionB: string;
+  optionC: string;
+  questionTextYoruba?: string;
+  questionTextHausa?: string;
+  questionTextIgbo?: string;
+  optionAYoruba?: string;
+  optionAHausa?: string;
+  optionAIgbo?: string;
+  optionBYoruba?: string;
+  optionBHausa?: string;
+  optionBIgbo?: string;
+  optionCYoruba?: string;
+  optionCHausa?: string;
+  optionCIgbo?: string;
+  correctAnswer: string;
+  difficulty: string;
+  isActive: boolean;
+}
+
+interface QuizSessionType {
+  id: string;
+  userId: string;
+  status: string;
+  correctAnswers: number;
+  totalQuestions: number;
+  pointsEarned: number;
+  startedAt: string;
+  completedAt: string | null;
+}
+
 interface QuizSessionProps {
   onComplete: () => void;
 }
+
+const LANGUAGE_LABELS: Record<string, string> = {
+  english: 'English',
+  yoruba: 'Yoruba',
+  hausa: 'Hausa',
+  igbo: 'Igbo',
+};
 
 export function QuizSession({ onComplete }: QuizSessionProps) {
   const { user, profile } = useAuth();
@@ -25,22 +65,26 @@ export function QuizSession({ onComplete }: QuizSessionProps) {
   const [timeRemaining, setTimeRemaining] = useState(TIME_PER_QUESTION);
 
   const currentQuestion = questions[currentQuestionIndex];
-  const language = profile?.preferred_language || 'english';
+  const language = profile?.preferredLanguage || 'english';
 
-  const getTranslatedText = (question: Question, field: 'question' | 'option_a' | 'option_b' | 'option_c') => {
+  const getTranslatedText = (question: Question, field: 'question' | 'optionA' | 'optionB' | 'optionC') => {
     if (language === 'english') {
-      return field === 'question' ? question.question_text : question[field];
+      if (field === 'question') return question.questionText;
+      if (field === 'optionA') return question.optionA;
+      if (field === 'optionB') return question.optionB;
+      if (field === 'optionC') return question.optionC;
     }
 
-    const langSuffix = `_${language}`;
-    const fieldKey = field === 'question' ? `question_text${langSuffix}` : `${field}${langSuffix}`;
-    const translatedText = question[fieldKey as keyof Question];
-
-    if (translatedText && typeof translatedText === 'string') {
-      return translatedText;
+    const langSuffix = language.charAt(0).toUpperCase() + language.slice(1);
+    
+    if (field === 'question') {
+      const translatedKey = `questionText${langSuffix}` as keyof Question;
+      return (question[translatedKey] as string) || question.questionText;
     }
-
-    return field === 'question' ? question.question_text : question[field];
+    
+    const translatedKey = `${field}${langSuffix}` as keyof Question;
+    const fallbackKey = field as keyof Question;
+    return (question[translatedKey] as string) || (question[fallbackKey] as string);
   };
 
   useEffect(() => {
@@ -65,18 +109,20 @@ export function QuizSession({ onComplete }: QuizSessionProps) {
   const handleTimeUp = async () => {
     if (showResult || !currentSession || !currentQuestion) return;
 
-    const isCorrect = selectedAnswer === currentQuestion.correct_answer;
+    const isCorrect = selectedAnswer === currentQuestion.correctAnswer;
     const newCorrectCount = isCorrect ? correctCount + 1 : correctCount;
 
     try {
-      await supabase.from('quiz_answers').insert([
-        {
-          session_id: currentSession.id,
-          question_id: currentQuestion.id,
-          user_answer: selectedAnswer || 'TIMEOUT',
-          is_correct: isCorrect,
-        },
-      ]);
+      await fetch('/api/quiz/answer', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          sessionId: currentSession.id,
+          questionId: currentQuestion.id,
+          selectedAnswer: selectedAnswer || 'TIMEOUT',
+          isCorrect,
+        }),
+      });
 
       setCorrectCount(newCorrectCount);
       setShowResult(true);
@@ -102,46 +148,27 @@ export function QuizSession({ onComplete }: QuizSessionProps) {
     setLoading(true);
 
     try {
-      const { data: wallet } = await supabase
-        .from('wallets')
-        .select('*')
-        .eq('user_id', user.id)
-        .maybeSingle();
+      const walletRes = await fetch(`/api/wallet/${user.id}`);
+      if (!walletRes.ok) {
+        alert('Could not load wallet. Please try again.');
+        setLoading(false);
+        return;
+      }
+      const wallet = await walletRes.json();
 
-      if (!wallet || wallet.balance < QUIZ_COST) {
+      if (!wallet || parseFloat(wallet.balance) < QUIZ_COST) {
         alert('Insufficient balance. Please fund your wallet.');
         setLoading(false);
         return;
       }
 
-      const newBalance = wallet.balance - QUIZ_COST;
-      const { error: walletError } = await supabase
-        .from('wallets')
-        .update({
-          balance: newBalance,
-          updated_at: new Date().toISOString(),
-        })
-        .eq('id', wallet.id);
-
-      if (walletError) throw walletError;
-
-      const { error: transactionError } = await supabase
-        .from('wallet_transactions')
-        .insert([
-          {
-            wallet_id: wallet.id,
-            type: 'quiz_payment',
-            amount: -QUIZ_COST,
-            description: 'Quiz session payment',
-          },
-        ]);
-
-      if (transactionError) throw transactionError;
-
-      const { data: allQuestions } = await supabase
-        .from('questions')
-        .select('*')
-        .eq('is_active', true);
+      const questionsRes = await fetch(`/api/questions?limit=20`);
+      if (!questionsRes.ok) {
+        alert('Could not load questions. Please try again.');
+        setLoading(false);
+        return;
+      }
+      const allQuestions = await questionsRes.json();
 
       if (!allQuestions || allQuestions.length < QUESTIONS_PER_SESSION) {
         alert('Not enough questions available. Please contact admin.');
@@ -152,18 +179,23 @@ export function QuizSession({ onComplete }: QuizSessionProps) {
       const shuffled = [...allQuestions].sort(() => Math.random() - 0.5);
       const selectedQuestions = shuffled.slice(0, QUESTIONS_PER_SESSION);
 
-      const { data: session, error: sessionError } = await supabase
-        .from('quiz_sessions')
-        .insert([
-          {
-            user_id: user.id,
-            status: 'in_progress',
-          },
-        ])
-        .select()
-        .single();
+      const sessionRes = await fetch('/api/quiz/start', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          userId: user.id,
+          status: 'in_progress',
+          correctAnswers: 0,
+          totalQuestions: QUESTIONS_PER_SESSION,
+          pointsEarned: 0,
+        }),
+      });
 
-      if (sessionError) throw sessionError;
+      if (!sessionRes.ok) {
+        throw new Error('Failed to start quiz session');
+      }
+
+      const session = await sessionRes.json();
 
       setCurrentSession(session);
       setQuestions(selectedQuestions);
@@ -181,18 +213,20 @@ export function QuizSession({ onComplete }: QuizSessionProps) {
   const handleAnswerSubmit = async () => {
     if (!selectedAnswer || !currentSession || !currentQuestion) return;
 
-    const isCorrect = selectedAnswer === currentQuestion.correct_answer;
+    const isCorrect = selectedAnswer === currentQuestion.correctAnswer;
     const newCorrectCount = isCorrect ? correctCount + 1 : correctCount;
 
     try {
-      await supabase.from('quiz_answers').insert([
-        {
-          session_id: currentSession.id,
-          question_id: currentQuestion.id,
-          user_answer: selectedAnswer,
-          is_correct: isCorrect,
-        },
-      ]);
+      await fetch('/api/quiz/answer', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          sessionId: currentSession.id,
+          questionId: currentQuestion.id,
+          selectedAnswer,
+          isCorrect,
+        }),
+      });
 
       setCorrectCount(newCorrectCount);
       setShowResult(true);
@@ -218,34 +252,17 @@ export function QuizSession({ onComplete }: QuizSessionProps) {
     const pointsEarned = finalCorrectCount >= MIN_CORRECT_ANSWERS ? 1 : 0;
 
     try {
-      await supabase
-        .from('quiz_sessions')
-        .update({
+      await fetch(`/api/quiz/session/${currentSession.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
           status: 'completed',
-          correct_answers: finalCorrectCount,
-          points_earned: pointsEarned,
-          completed_at: new Date().toISOString(),
-        })
-        .eq('id', currentSession.id);
-
-      if (pointsEarned > 0) {
-        const { data: userPoints } = await supabase
-          .from('user_points')
-          .select('*')
-          .eq('user_id', user.id)
-          .maybeSingle();
-
-        if (userPoints) {
-          await supabase
-            .from('user_points')
-            .update({
-              points: userPoints.points + pointsEarned,
-              total_earned: userPoints.total_earned + pointsEarned,
-              updated_at: new Date().toISOString(),
-            })
-            .eq('id', userPoints.id);
-        }
-      }
+          correctAnswers: finalCorrectCount,
+          totalQuestions: QUESTIONS_PER_SESSION,
+          pointsEarned,
+          completedAt: new Date().toISOString(),
+        }),
+      });
 
       setSessionComplete(true);
     } catch (error) {
@@ -284,7 +301,7 @@ export function QuizSession({ onComplete }: QuizSessionProps) {
               You earned 1 point!
             </p>
             <p className="text-green-700 text-sm mt-2">
-              Collect 5 points to spin the Magic Wheel and win prizes
+              Collect 10 points to spin the Magic Wheel and win prizes
             </p>
           </div>
         ) : (
@@ -299,6 +316,7 @@ export function QuizSession({ onComplete }: QuizSessionProps) {
         <button
           onClick={onComplete}
           className="bg-green-600 text-white px-8 py-3 rounded-lg font-semibold hover:bg-green-700 transition-colors"
+          data-testid="button-back-dashboard"
         >
           Back to Dashboard
         </button>
@@ -322,11 +340,12 @@ export function QuizSession({ onComplete }: QuizSessionProps) {
         <div className="bg-blue-50 rounded-lg p-6 mb-6 text-left">
           <h3 className="font-semibold text-blue-900 mb-3">Session Details:</h3>
           <ul className="space-y-2 text-blue-800">
-            <li>• Cost: ₦{QUIZ_COST}</li>
-            <li>• Questions: {QUESTIONS_PER_SESSION}</li>
-            <li>• Time per question: {TIME_PER_QUESTION} seconds</li>
-            <li>• Minimum correct: {MIN_CORRECT_ANSWERS}</li>
-            <li>• Reward: 1 point (if passed)</li>
+            <li>Cost: ₦{QUIZ_COST}</li>
+            <li>Questions: {QUESTIONS_PER_SESSION}</li>
+            <li>Time per question: {TIME_PER_QUESTION} seconds</li>
+            <li>Minimum correct: {MIN_CORRECT_ANSWERS}</li>
+            <li>Reward: 1 point (if passed)</li>
+            <li>Language: {LANGUAGE_LABELS[language] || 'English'}</li>
           </ul>
         </div>
 
@@ -334,6 +353,7 @@ export function QuizSession({ onComplete }: QuizSessionProps) {
           onClick={startNewSession}
           disabled={loading}
           className="bg-green-600 text-white px-8 py-3 rounded-lg font-semibold hover:bg-green-700 transition-colors disabled:opacity-50"
+          data-testid="button-start-quiz-session"
         >
           {loading ? 'Starting...' : `Start Quiz (₦${QUIZ_COST})`}
         </button>
@@ -344,12 +364,15 @@ export function QuizSession({ onComplete }: QuizSessionProps) {
   return (
     <div className="bg-white rounded-xl shadow-lg p-8">
       <div className="mb-6">
-        <div className="flex items-center justify-between mb-4">
+        <div className="flex items-center justify-between gap-4 mb-4 flex-wrap">
           <div className="flex items-center gap-2 text-gray-600">
             <Clock size={20} />
             <span>Question {currentQuestionIndex + 1} of {QUESTIONS_PER_SESSION}</span>
           </div>
-          <div className="flex items-center gap-4">
+          <div className="flex items-center gap-4 flex-wrap">
+            <span className="text-sm text-gray-500 bg-gray-100 px-2 py-1 rounded">
+              {LANGUAGE_LABELS[language]}
+            </span>
             <div className={`flex items-center gap-2 font-bold text-xl ${
               timeRemaining <= 10 ? 'text-red-600 animate-pulse' : 'text-blue-600'
             }`}>
@@ -374,14 +397,16 @@ export function QuizSession({ onComplete }: QuizSessionProps) {
 
       {currentQuestion && (
         <div>
-          <h3 className="text-2xl font-bold mb-6">{getTranslatedText(currentQuestion, 'question')}</h3>
+          <h3 className="text-2xl font-bold mb-6" data-testid="text-question">
+            {getTranslatedText(currentQuestion, 'question')}
+          </h3>
 
           <div className="space-y-3 mb-6">
             {['A', 'B', 'C'].map((option) => {
-              const optionKey = `option_${option.toLowerCase()}` as 'option_a' | 'option_b' | 'option_c';
+              const optionKey = `option${option}` as 'optionA' | 'optionB' | 'optionC';
               const optionText = getTranslatedText(currentQuestion, optionKey);
               const isSelected = selectedAnswer === option;
-              const isCorrect = option === currentQuestion.correct_answer;
+              const isCorrect = option === currentQuestion.correctAnswer;
               const showCorrectAnswer = showResult && isCorrect;
               const showWrongAnswer = showResult && isSelected && !isCorrect;
 
@@ -399,13 +424,14 @@ export function QuizSession({ onComplete }: QuizSessionProps) {
                       ? 'bg-green-50 border-2 border-green-600'
                       : 'bg-gray-50 border-2 border-gray-200 hover:border-green-400'
                   } disabled:cursor-not-allowed`}
+                  data-testid={`button-option-${option}`}
                 >
-                  <div className="flex items-center justify-between">
+                  <div className="flex items-center justify-between gap-2">
                     <span>
                       <strong>{option}.</strong> {optionText}
                     </span>
-                    {showCorrectAnswer && <CheckCircle className="text-green-600" size={24} />}
-                    {showWrongAnswer && <XCircle className="text-red-600" size={24} />}
+                    {showCorrectAnswer && <CheckCircle className="text-green-600 flex-shrink-0" size={24} />}
+                    {showWrongAnswer && <XCircle className="text-red-600 flex-shrink-0" size={24} />}
                   </div>
                 </button>
               );
@@ -417,6 +443,7 @@ export function QuizSession({ onComplete }: QuizSessionProps) {
               onClick={handleAnswerSubmit}
               disabled={!selectedAnswer}
               className="w-full bg-green-600 text-white py-3 rounded-lg font-semibold hover:bg-green-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              data-testid="button-submit-answer"
             >
               Submit Answer
             </button>

@@ -1,7 +1,13 @@
 import { useState, useEffect } from 'react';
-import { supabase } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
 import { User, Lock, Phone, MapPin, Image, Save, Eye, EyeOff, Languages, Building2, CreditCard, CheckCircle2, XCircle } from 'lucide-react';
+
+const LANGUAGE_OPTIONS = [
+  { value: 'english', label: 'English', description: 'Default language' },
+  { value: 'yoruba', label: 'Yoruba', description: 'Ede Yoruba' },
+  { value: 'hausa', label: 'Hausa', description: 'Harshen Hausa' },
+  { value: 'igbo', label: 'Igbo', description: 'Asusu Igbo' },
+];
 
 export function ProfileSettings() {
   const { user, profile, refreshProfile } = useAuth();
@@ -28,16 +34,16 @@ export function ProfileSettings() {
 
   useEffect(() => {
     if (profile) {
-      setFullName(profile.full_name || '');
-      setPhoneNumber(profile.phone_number || '');
+      setFullName(profile.fullName || '');
+      setPhoneNumber(profile.phoneNumber || '');
       setSex(profile.sex || '');
       setLocation(profile.location || '');
-      setPreferredLanguage(profile.preferred_language || 'english');
-      setPhotoUrl(profile.photo_url || '');
-      setBankName(profile.bank_name || '');
-      setBankAccountName(profile.bank_account_name || '');
-      setBankAccountNumber(profile.bank_account_number || '');
-      setAccountVerified(profile.account_verified || false);
+      setPreferredLanguage(profile.preferredLanguage || 'english');
+      setPhotoUrl(profile.photoUrl || '');
+      setBankName(profile.bankName || '');
+      setBankAccountName(profile.bankAccountName || '');
+      setBankAccountNumber(profile.bankAccountNumber || '');
+      setAccountVerified(profile.accountVerified || false);
     }
   }, [profile]);
 
@@ -47,29 +53,32 @@ export function ProfileSettings() {
     setMessage(null);
 
     try {
-      const { error } = await supabase
-        .from('profiles')
-        .update({
-          full_name: fullName,
-          phone_number: phoneNumber,
-          sex: sex,
-          location: location,
-          preferred_language: preferredLanguage,
-          photo_url: photoUrl,
-          bank_name: bankName,
-          bank_account_name: bankAccountName,
-          bank_account_number: bankAccountNumber,
-          updated_at: new Date().toISOString(),
-        })
-        .eq('id', user?.id);
+      const response = await fetch(`/api/profile/${user?.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          fullName,
+          phoneNumber,
+          sex,
+          location,
+          preferredLanguage,
+          photoUrl,
+          bankName,
+          bankAccountName,
+          bankAccountNumber,
+        }),
+      });
 
-      if (error) throw error;
+      if (!response.ok) {
+        const data = await response.json();
+        throw new Error(data.error || 'Failed to update profile');
+      }
 
       await refreshProfile();
       setMessage({ type: 'success', text: 'Profile updated successfully!' });
       setTimeout(() => setMessage(null), 3000);
-    } catch (error) {
-      setMessage({ type: 'error', text: 'Failed to update profile. Please try again.' });
+    } catch (error: any) {
+      setMessage({ type: 'error', text: error.message || 'Failed to update profile. Please try again.' });
       console.error('Error updating profile:', error);
     } finally {
       setLoading(false);
@@ -94,19 +103,27 @@ export function ProfileSettings() {
     }
 
     try {
-      const { error } = await supabase.auth.updateUser({
-        password: newPassword,
+      const response = await fetch(`/api/profile/${user?.id}/password`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          currentPassword,
+          newPassword,
+        }),
       });
 
-      if (error) throw error;
+      if (!response.ok) {
+        const data = await response.json();
+        throw new Error(data.error || 'Failed to change password');
+      }
 
       setMessage({ type: 'success', text: 'Password changed successfully!' });
       setCurrentPassword('');
       setNewPassword('');
       setConfirmPassword('');
       setTimeout(() => setMessage(null), 3000);
-    } catch (error) {
-      setMessage({ type: 'error', text: 'Failed to change password. Please try again.' });
+    } catch (error: any) {
+      setMessage({ type: 'error', text: error.message || 'Failed to change password. Please try again.' });
       console.error('Error changing password:', error);
     } finally {
       setLoading(false);
@@ -122,6 +139,7 @@ export function ProfileSettings() {
               ? 'bg-green-50 text-green-800 border border-green-200'
               : 'bg-red-50 text-red-800 border border-red-200'
           }`}
+          data-testid={`alert-${message.type}`}
         >
           {message.text}
         </div>
@@ -144,6 +162,7 @@ export function ProfileSettings() {
               onChange={(e) => setFullName(e.target.value)}
               className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
               placeholder="Enter your full name"
+              data-testid="input-full-name"
             />
           </div>
 
@@ -159,6 +178,7 @@ export function ProfileSettings() {
                 onChange={(e) => setPhoneNumber(e.target.value)}
                 className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
                 placeholder="Enter your phone number"
+                data-testid="input-phone"
               />
             </div>
           </div>
@@ -171,6 +191,7 @@ export function ProfileSettings() {
               value={sex}
               onChange={(e) => setSex(e.target.value)}
               className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
+              data-testid="select-sex"
             >
               <option value="">Select...</option>
               <option value="male">Male</option>
@@ -191,13 +212,14 @@ export function ProfileSettings() {
                 onChange={(e) => setLocation(e.target.value)}
                 className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
                 placeholder="Enter your location"
+                data-testid="input-location"
               />
             </div>
           </div>
 
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">
-              Preferred Language
+              Preferred Language for Quiz Questions
             </label>
             <div className="relative">
               <Languages className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" size={20} />
@@ -205,15 +227,17 @@ export function ProfileSettings() {
                 value={preferredLanguage}
                 onChange={(e) => setPreferredLanguage(e.target.value)}
                 className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent appearance-none bg-white"
+                data-testid="select-language"
               >
-                <option value="english">English</option>
-                <option value="yoruba">Yoruba</option>
-                <option value="hausa">Hausa</option>
-                <option value="igbo">Igbo</option>
+                {LANGUAGE_OPTIONS.map(lang => (
+                  <option key={lang.value} value={lang.value}>
+                    {lang.label} - {lang.description}
+                  </option>
+                ))}
               </select>
             </div>
             <p className="mt-2 text-sm text-gray-500">
-              Choose your preferred language for quiz questions
+              Choose your preferred language for quiz questions. Questions will be displayed in your selected language when available.
             </p>
           </div>
 
@@ -229,6 +253,7 @@ export function ProfileSettings() {
                 onChange={(e) => setPhotoUrl(e.target.value)}
                 className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
                 placeholder="Enter photo URL"
+                data-testid="input-photo-url"
               />
             </div>
             {photoUrl && (
@@ -262,6 +287,7 @@ export function ProfileSettings() {
                     value={bankName}
                     onChange={(e) => setBankName(e.target.value)}
                     className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent appearance-none bg-white"
+                    data-testid="select-bank"
                   >
                     <option value="">Select Bank</option>
                     <option value="Access Bank">Access Bank</option>
@@ -299,6 +325,7 @@ export function ProfileSettings() {
                     onChange={(e) => setBankAccountName(e.target.value)}
                     className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
                     placeholder="Enter account holder name"
+                    data-testid="input-account-name"
                   />
                 </div>
               </div>
@@ -316,6 +343,7 @@ export function ProfileSettings() {
                     className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
                     placeholder="Enter 10-digit account number"
                     maxLength={10}
+                    data-testid="input-account-number"
                   />
                 </div>
                 {bankAccountNumber && (
@@ -347,6 +375,7 @@ export function ProfileSettings() {
             type="submit"
             disabled={loading}
             className="w-full bg-green-600 text-white py-3 rounded-lg font-semibold hover:bg-green-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+            data-testid="button-save-profile"
           >
             <Save size={20} />
             {loading ? 'Saving...' : 'Save Profile'}
@@ -373,6 +402,7 @@ export function ProfileSettings() {
                 onChange={(e) => setCurrentPassword(e.target.value)}
                 className="w-full pl-10 pr-12 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                 placeholder="Enter current password"
+                data-testid="input-current-password"
               />
               <button
                 type="button"
@@ -396,6 +426,7 @@ export function ProfileSettings() {
                 onChange={(e) => setNewPassword(e.target.value)}
                 className="w-full pl-10 pr-12 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                 placeholder="Enter new password (min 6 characters)"
+                data-testid="input-new-password"
               />
               <button
                 type="button"
@@ -419,6 +450,7 @@ export function ProfileSettings() {
                 onChange={(e) => setConfirmPassword(e.target.value)}
                 className="w-full pl-10 pr-12 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                 placeholder="Confirm new password"
+                data-testid="input-confirm-password"
               />
               <button
                 type="button"
@@ -434,6 +466,7 @@ export function ProfileSettings() {
             type="submit"
             disabled={loading || !newPassword || !confirmPassword}
             className="w-full bg-blue-600 text-white py-3 rounded-lg font-semibold hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+            data-testid="button-change-password"
           >
             <Lock size={20} />
             {loading ? 'Changing...' : 'Change Password'}

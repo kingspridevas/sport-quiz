@@ -87,6 +87,33 @@ export function registerRoutes(app: Express) {
     }
   });
 
+  app.patch("/api/profile/:id/password", async (req, res) => {
+    try {
+      const { currentPassword, newPassword } = req.body;
+      
+      if (!currentPassword || !newPassword) {
+        return res.status(400).json({ error: "Current password and new password are required" });
+      }
+
+      const profile = await storage.getProfile(req.params.id);
+      if (!profile || !profile.passwordHash) {
+        return res.status(404).json({ error: "Profile not found" });
+      }
+
+      const isValid = await bcrypt.compare(currentPassword, profile.passwordHash);
+      if (!isValid) {
+        return res.status(401).json({ error: "Current password is incorrect" });
+      }
+
+      const newPasswordHash = await bcrypt.hash(newPassword, 10);
+      await storage.updateProfile(req.params.id, { passwordHash: newPasswordHash });
+
+      res.json({ success: true, message: "Password changed successfully" });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
   // Wallets
   app.get("/api/wallet/:userId", async (req, res) => {
     try {
@@ -120,7 +147,7 @@ export function registerRoutes(app: Express) {
     }
   });
 
-  app.get("/api/questions/all", async (req, res) => {
+  app.get("/api/questions/all", async (_req, res) => {
     try {
       const questions = await storage.getAllQuestions();
       res.json(questions);
@@ -153,9 +180,35 @@ export function registerRoutes(app: Express) {
   });
 
   // Quiz Sessions
+  const QUIZ_COST = 100;
+  
   app.post("/api/quiz/start", async (req, res) => {
     try {
       const validatedData = insertQuizSessionSchema.parse(req.body);
+      
+      // Check and deduct wallet balance
+      const wallet = await storage.getWallet(validatedData.userId);
+      if (!wallet) {
+        return res.status(400).json({ error: "Wallet not found" });
+      }
+      
+      const currentBalance = parseFloat(wallet.balance);
+      if (currentBalance < QUIZ_COST) {
+        return res.status(400).json({ error: "Insufficient balance. Please fund your wallet." });
+      }
+
+      // Deduct quiz cost
+      const newBalance = currentBalance - QUIZ_COST;
+      await storage.updateWallet(wallet.id, { balance: newBalance.toString() });
+      
+      // Record transaction
+      await storage.createWalletTransaction({
+        walletId: wallet.id,
+        type: "quiz_payment",
+        amount: (-QUIZ_COST).toString(),
+        description: "Quiz session payment",
+      });
+
       const session = await storage.createQuizSession(validatedData);
       res.json(session);
     } catch (error: any) {
@@ -201,6 +254,18 @@ export function registerRoutes(app: Express) {
       if (!session) {
         return res.status(404).json({ error: "Session not found" });
       }
+      
+      // If session completed and points earned, update user points
+      if (updates.status === 'completed' && updates.pointsEarned > 0) {
+        const userPoints = await storage.getUserPoints(session.userId);
+        if (userPoints) {
+          await storage.updateUserPoints(userPoints.id, {
+            points: userPoints.points + updates.pointsEarned,
+            totalEarned: userPoints.totalEarned + updates.pointsEarned,
+          });
+        }
+      }
+      
       res.json(session);
     } catch (error: any) {
       res.status(500).json({ error: error.message });
@@ -221,7 +286,7 @@ export function registerRoutes(app: Express) {
   });
 
   // Prizes
-  app.get("/api/prizes", async (req, res) => {
+  app.get("/api/prizes", async (_req, res) => {
     try {
       const prizes = await storage.getActivePrizes();
       res.json(prizes);
@@ -230,7 +295,7 @@ export function registerRoutes(app: Express) {
     }
   });
 
-  app.get("/api/prizes/all", async (req, res) => {
+  app.get("/api/prizes/all", async (_req, res) => {
     try {
       const prizes = await storage.getAllPrizes();
       res.json(prizes);
