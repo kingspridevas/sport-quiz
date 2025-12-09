@@ -674,4 +674,18 @@ export function registerRoutes(app: Express) {
       res.status(500).json({ error: error.message });
     }
   });
+
+  app.patch("/api/admin/points/:userId", async (req, res) => {
+    try {
+      const { points } = req.body;
+      const userPoints = await storage.getUserPoints(req.params.userId);
+      if (!userPoints) {
+        return res.status(404).json({ error: "User points not found" });
+      }
+      const updated = await storage.updateUserPoints(req.params.userId, { points });
+      res.json(updated);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
 }

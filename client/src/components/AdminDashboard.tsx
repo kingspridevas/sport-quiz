@@ -116,6 +116,15 @@ export function AdminDashboard() {
   const [quizSessions, setQuizSessions] = useState<QuizSessionData[]>([]);
   const [selectedUser, setSelectedUser] = useState<UserDetail | null>(null);
   const [loadingUser, setLoadingUser] = useState(false);
+  const [editingUser, setEditingUser] = useState(false);
+  const [userEditForm, setUserEditForm] = useState({
+    fullName: '',
+    phoneNumber: '',
+    location: '',
+    isAdmin: false,
+    walletBalance: '',
+    points: '',
+  });
 
   const [questionForm, setQuestionForm] = useState({
     questionText: '',
@@ -257,6 +266,72 @@ export function AdminDashboard() {
   const getUserName = (userId: string) => {
     const user = users.find(u => u.id === userId);
     return user?.fullName || user?.email || userId;
+  };
+
+  const startEditingUser = () => {
+    if (!selectedUser) return;
+    setUserEditForm({
+      fullName: selectedUser.profile.fullName || '',
+      phoneNumber: selectedUser.profile.phoneNumber || '',
+      location: selectedUser.profile.location || '',
+      isAdmin: selectedUser.profile.isAdmin,
+      walletBalance: selectedUser.wallet?.balance || '0',
+      points: String(selectedUser.points?.points || 0),
+    });
+    setEditingUser(true);
+  };
+
+  const cancelEditingUser = () => {
+    setEditingUser(false);
+  };
+
+  const handleSaveUser = async () => {
+    if (!selectedUser) return;
+    try {
+      const profileResponse = await fetch(`/api/admin/users/${selectedUser.profile.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          fullName: userEditForm.fullName || null,
+          phoneNumber: userEditForm.phoneNumber || null,
+          location: userEditForm.location || null,
+          isAdmin: userEditForm.isAdmin,
+        }),
+      });
+      
+      if (!profileResponse.ok) {
+        throw new Error('Failed to update profile');
+      }
+
+      if (selectedUser.wallet && userEditForm.walletBalance !== selectedUser.wallet.balance) {
+        await fetch(`/api/admin/wallets/${selectedUser.wallet.id}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            balance: userEditForm.walletBalance,
+          }),
+        });
+      }
+
+      if (selectedUser.points && String(selectedUser.points.points) !== userEditForm.points) {
+        await fetch(`/api/admin/points/${selectedUser.profile.id}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            points: parseInt(userEditForm.points) || 0,
+          }),
+        });
+      }
+
+      setEditingUser(false);
+      loadUserDetails(selectedUser.profile.id);
+      loadUsers();
+      loadWallets();
+      loadStats();
+    } catch (error) {
+      console.error('Error saving user:', error);
+      alert('Failed to save user changes');
+    }
   };
 
   const handleSaveQuestion = async () => {
@@ -1432,38 +1507,149 @@ OR JSON format:
                 </button>
                 
                 <div className="bg-white rounded-xl shadow-lg p-6 mb-6">
-                  <h2 className="text-2xl font-bold mb-4">User Details</h2>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    <div>
-                      <h3 className="font-semibold text-gray-700 mb-2">Profile</h3>
-                      <div className="space-y-2 text-sm">
-                        <p><span className="text-gray-500">Name:</span> {selectedUser.profile.fullName || 'Not set'}</p>
-                        <p><span className="text-gray-500">Email:</span> {selectedUser.profile.email}</p>
-                        <p><span className="text-gray-500">Phone:</span> {selectedUser.profile.phoneNumber || 'Not set'}</p>
-                        <p><span className="text-gray-500">Location:</span> {selectedUser.profile.location || 'Not set'}</p>
-                        <p><span className="text-gray-500">Admin:</span> {selectedUser.profile.isAdmin ? 'Yes' : 'No'}</p>
+                  <div className="flex justify-between items-center gap-4 mb-4 flex-wrap">
+                    <h2 className="text-2xl font-bold">User Details</h2>
+                    {!editingUser ? (
+                      <button
+                        onClick={startEditingUser}
+                        className="bg-blue-600 text-white px-4 py-2 rounded-lg font-semibold hover:bg-blue-700 transition-colors flex items-center gap-2"
+                        data-testid="button-edit-user"
+                      >
+                        <Edit2 size={18} />
+                        Edit User
+                      </button>
+                    ) : (
+                      <div className="flex gap-2">
+                        <button
+                          onClick={handleSaveUser}
+                          className="bg-green-600 text-white px-4 py-2 rounded-lg font-semibold hover:bg-green-700 transition-colors flex items-center gap-2"
+                          data-testid="button-save-user"
+                        >
+                          <Save size={18} />
+                          Save
+                        </button>
+                        <button
+                          onClick={cancelEditingUser}
+                          className="bg-gray-500 text-white px-4 py-2 rounded-lg font-semibold hover:bg-gray-600 transition-colors flex items-center gap-2"
+                          data-testid="button-cancel-edit-user"
+                        >
+                          <X size={18} />
+                          Cancel
+                        </button>
                       </div>
-                    </div>
-                    <div>
-                      <h3 className="font-semibold text-gray-700 mb-2">Wallet & Points</h3>
-                      <div className="space-y-2 text-sm">
-                        <p><span className="text-gray-500">Balance:</span> N{parseFloat(selectedUser.wallet?.balance || '0').toLocaleString()}</p>
-                        <p><span className="text-gray-500">Total Funded:</span> N{parseFloat(selectedUser.wallet?.totalFunded || '0').toLocaleString()}</p>
-                        <p><span className="text-gray-500">Points:</span> {selectedUser.points?.points || 0}</p>
-                        <p><span className="text-gray-500">Total Earned:</span> {selectedUser.points?.totalEarned || 0}</p>
-                        <p><span className="text-gray-500">Total Spent:</span> {selectedUser.points?.totalSpent || 0}</p>
-                      </div>
-                    </div>
+                    )}
                   </div>
-                  {selectedUser.profile.bankName && (
-                    <div className="mt-4">
-                      <h3 className="font-semibold text-gray-700 mb-2">Bank Details</h3>
-                      <div className="space-y-1 text-sm">
-                        <p><span className="text-gray-500">Bank:</span> {selectedUser.profile.bankName}</p>
-                        <p><span className="text-gray-500">Account:</span> {selectedUser.profile.accountNumber}</p>
-                        <p><span className="text-gray-500">Name:</span> {selectedUser.profile.accountName}</p>
+                  
+                  {editingUser ? (
+                    <div className="space-y-4">
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div>
+                          <label className="block text-sm font-medium mb-1">Full Name</label>
+                          <input
+                            type="text"
+                            value={userEditForm.fullName}
+                            onChange={(e) => setUserEditForm({ ...userEditForm, fullName: e.target.value })}
+                            className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
+                            data-testid="input-user-fullname"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-sm font-medium mb-1">Email (read-only)</label>
+                          <input
+                            type="email"
+                            value={selectedUser.profile.email}
+                            className="w-full px-4 py-2 border rounded-lg bg-gray-100"
+                            disabled
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-sm font-medium mb-1">Phone Number</label>
+                          <input
+                            type="text"
+                            value={userEditForm.phoneNumber}
+                            onChange={(e) => setUserEditForm({ ...userEditForm, phoneNumber: e.target.value })}
+                            className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
+                            data-testid="input-user-phone"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-sm font-medium mb-1">Location</label>
+                          <input
+                            type="text"
+                            value={userEditForm.location}
+                            onChange={(e) => setUserEditForm({ ...userEditForm, location: e.target.value })}
+                            className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
+                            data-testid="input-user-location"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-sm font-medium mb-1">Wallet Balance (N)</label>
+                          <input
+                            type="number"
+                            value={userEditForm.walletBalance}
+                            onChange={(e) => setUserEditForm({ ...userEditForm, walletBalance: e.target.value })}
+                            className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
+                            data-testid="input-user-wallet"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-sm font-medium mb-1">Points</label>
+                          <input
+                            type="number"
+                            value={userEditForm.points}
+                            onChange={(e) => setUserEditForm({ ...userEditForm, points: e.target.value })}
+                            className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
+                            data-testid="input-user-points"
+                          />
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="checkbox"
+                          id="isAdmin"
+                          checked={userEditForm.isAdmin}
+                          onChange={(e) => setUserEditForm({ ...userEditForm, isAdmin: e.target.checked })}
+                          className="w-4 h-4"
+                          data-testid="checkbox-user-admin"
+                        />
+                        <label htmlFor="isAdmin" className="font-medium">Admin Access</label>
                       </div>
                     </div>
+                  ) : (
+                    <>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        <div>
+                          <h3 className="font-semibold text-gray-700 mb-2">Profile</h3>
+                          <div className="space-y-2 text-sm">
+                            <p><span className="text-gray-500">Name:</span> {selectedUser.profile.fullName || 'Not set'}</p>
+                            <p><span className="text-gray-500">Email:</span> {selectedUser.profile.email}</p>
+                            <p><span className="text-gray-500">Phone:</span> {selectedUser.profile.phoneNumber || 'Not set'}</p>
+                            <p><span className="text-gray-500">Location:</span> {selectedUser.profile.location || 'Not set'}</p>
+                            <p><span className="text-gray-500">Admin:</span> {selectedUser.profile.isAdmin ? 'Yes' : 'No'}</p>
+                          </div>
+                        </div>
+                        <div>
+                          <h3 className="font-semibold text-gray-700 mb-2">Wallet & Points</h3>
+                          <div className="space-y-2 text-sm">
+                            <p><span className="text-gray-500">Balance:</span> N{parseFloat(selectedUser.wallet?.balance || '0').toLocaleString()}</p>
+                            <p><span className="text-gray-500">Total Funded:</span> N{parseFloat(selectedUser.wallet?.totalFunded || '0').toLocaleString()}</p>
+                            <p><span className="text-gray-500">Points:</span> {selectedUser.points?.points || 0}</p>
+                            <p><span className="text-gray-500">Total Earned:</span> {selectedUser.points?.totalEarned || 0}</p>
+                            <p><span className="text-gray-500">Total Spent:</span> {selectedUser.points?.totalSpent || 0}</p>
+                          </div>
+                        </div>
+                      </div>
+                      {selectedUser.profile.bankName && (
+                        <div className="mt-4">
+                          <h3 className="font-semibold text-gray-700 mb-2">Bank Details</h3>
+                          <div className="space-y-1 text-sm">
+                            <p><span className="text-gray-500">Bank:</span> {selectedUser.profile.bankName}</p>
+                            <p><span className="text-gray-500">Account:</span> {selectedUser.profile.accountNumber}</p>
+                            <p><span className="text-gray-500">Name:</span> {selectedUser.profile.accountName}</p>
+                          </div>
+                        </div>
+                      )}
+                    </>
                   )}
                 </div>
 
