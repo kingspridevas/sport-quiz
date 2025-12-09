@@ -564,4 +564,114 @@ export function registerRoutes(app: Express) {
       res.status(500).json({ error: error.message });
     }
   });
+
+  // Admin Routes
+  app.get("/api/admin/stats", async (req, res) => {
+    try {
+      const stats = await storage.getAdminStats();
+      res.json(stats);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.get("/api/admin/users", async (req, res) => {
+    try {
+      const profiles = await storage.getAllProfiles();
+      const safeProfiles = profiles.map(({ passwordHash, ...rest }) => rest);
+      res.json(safeProfiles);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.get("/api/admin/users/:id", async (req, res) => {
+    try {
+      const profile = await storage.getProfile(req.params.id);
+      if (!profile) {
+        return res.status(404).json({ error: "User not found" });
+      }
+      const { passwordHash, ...safeProfile } = profile;
+      
+      const wallet = await storage.getWallet(req.params.id);
+      const points = await storage.getUserPoints(req.params.id);
+      const quizSessions = await storage.getUserQuizSessions(req.params.id);
+      const wheelSpins = await storage.getUserWheelSpins(req.params.id);
+      const paymentTransactions = await storage.getUserPaymentTransactions(req.params.id);
+      
+      res.json({
+        profile: safeProfile,
+        wallet,
+        points,
+        quizSessions,
+        wheelSpins,
+        paymentTransactions
+      });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.patch("/api/admin/users/:id", async (req, res) => {
+    try {
+      const updates = req.body;
+      const profile = await storage.updateProfile(req.params.id, updates);
+      if (!profile) {
+        return res.status(404).json({ error: "User not found" });
+      }
+      const { passwordHash, ...safeProfile } = profile;
+      res.json(safeProfile);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.get("/api/admin/wallets", async (req, res) => {
+    try {
+      const wallets = await storage.getAllWallets();
+      res.json(wallets);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.patch("/api/admin/wallets/:id", async (req, res) => {
+    try {
+      const updates = req.body;
+      const wallet = await storage.updateWallet(req.params.id, updates);
+      if (!wallet) {
+        return res.status(404).json({ error: "Wallet not found" });
+      }
+      res.json(wallet);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.get("/api/admin/payments", async (req, res) => {
+    try {
+      const payments = await storage.getAllPaymentTransactions();
+      res.json(payments);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.get("/api/admin/quiz-sessions", async (req, res) => {
+    try {
+      const sessions = await storage.getAllQuizSessions();
+      res.json(sessions);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.get("/api/admin/quiz-sessions/:userId", async (req, res) => {
+    try {
+      const sessions = await storage.getUserQuizSessions(req.params.userId);
+      res.json(sessions);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
 }

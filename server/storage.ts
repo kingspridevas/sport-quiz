@@ -39,11 +39,13 @@ export interface IStorage {
   // Profiles
   getProfile(id: string): Promise<Profile | undefined>;
   getProfileByEmail(email: string): Promise<Profile | undefined>;
+  getAllProfiles(): Promise<Profile[]>;
   createProfile(profile: InsertProfile): Promise<Profile>;
   updateProfile(id: string, profile: Partial<InsertProfile>): Promise<Profile | undefined>;
   
   // Wallets
   getWallet(userId: string): Promise<Wallet | undefined>;
+  getAllWallets(): Promise<Wallet[]>;
   createWallet(wallet: InsertWallet): Promise<Wallet>;
   updateWallet(id: string, updates: Partial<InsertWallet>): Promise<Wallet | undefined>;
   
@@ -96,8 +98,13 @@ export interface IStorage {
   getPaymentTransaction(reference: string): Promise<PaymentTransaction | undefined>;
   getPaymentTransactionByAccount(accountNumber: string): Promise<PaymentTransaction | undefined>;
   getUserPaymentTransactions(userId: string): Promise<PaymentTransaction[]>;
+  getAllPaymentTransactions(): Promise<PaymentTransaction[]>;
   createPaymentTransaction(transaction: InsertPaymentTransaction): Promise<PaymentTransaction>;
   updatePaymentTransaction(id: string, updates: Partial<InsertPaymentTransaction>): Promise<PaymentTransaction | undefined>;
+  
+  // Admin Stats
+  getAllQuizSessions(): Promise<QuizSession[]>;
+  getAdminStats(): Promise<{totalUsers: number, totalQuizzes: number, totalWalletBalance: number, totalPayments: number}>;
 }
 
 export class DbStorage implements IStorage {
@@ -110,6 +117,10 @@ export class DbStorage implements IStorage {
   async getProfileByEmail(email: string) {
     const result = await db.select().from(profiles).where(eq(profiles.email, email));
     return result[0];
+  }
+
+  async getAllProfiles() {
+    return await db.select().from(profiles).orderBy(desc(profiles.id));
   }
 
   async createProfile(profile: InsertProfile) {
@@ -130,6 +141,10 @@ export class DbStorage implements IStorage {
   async getWallet(userId: string) {
     const result = await db.select().from(wallets).where(eq(wallets.userId, userId));
     return result[0];
+  }
+
+  async getAllWallets() {
+    return await db.select().from(wallets).orderBy(desc(wallets.id));
   }
 
   async createWallet(wallet: InsertWallet) {
@@ -348,6 +363,34 @@ export class DbStorage implements IStorage {
       .from(paymentTransactions)
       .where(eq(paymentTransactions.userId, userId))
       .orderBy(desc(paymentTransactions.createdAt));
+  }
+
+  async getAllPaymentTransactions() {
+    return db
+      .select()
+      .from(paymentTransactions)
+      .orderBy(desc(paymentTransactions.createdAt));
+  }
+
+  async getAllQuizSessions() {
+    return db
+      .select()
+      .from(quizSessions)
+      .orderBy(desc(quizSessions.createdAt));
+  }
+
+  async getAdminStats() {
+    const usersResult = await db.select({ count: drizzleSql<number>`count(*)` }).from(profiles);
+    const quizzesResult = await db.select({ count: drizzleSql<number>`count(*)` }).from(quizSessions);
+    const walletsResult = await db.select({ total: drizzleSql<number>`coalesce(sum(balance), 0)` }).from(wallets);
+    const paymentsResult = await db.select({ total: drizzleSql<number>`coalesce(sum(amount), 0)` }).from(paymentTransactions).where(eq(paymentTransactions.status, 'completed'));
+    
+    return {
+      totalUsers: Number(usersResult[0]?.count ?? 0),
+      totalQuizzes: Number(quizzesResult[0]?.count ?? 0),
+      totalWalletBalance: Number(walletsResult[0]?.total ?? 0),
+      totalPayments: Number(paymentsResult[0]?.total ?? 0)
+    };
   }
 
   async createPaymentTransaction(transaction: InsertPaymentTransaction) {

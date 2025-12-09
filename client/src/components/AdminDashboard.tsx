@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { useAuth } from '../contexts/AuthContext';
-import { Plus, Edit2, Trash2, Save, X, Settings, LogOut, Upload, Download, HelpCircle, Gift, FileSpreadsheet } from 'lucide-react';
+import { Plus, Edit2, Trash2, Save, X, Settings, LogOut, Upload, Download, HelpCircle, Gift, FileSpreadsheet, Users, Wallet, CreditCard, Activity, Eye, ChevronLeft } from 'lucide-react';
 
 interface Question {
   id: string;
@@ -39,15 +39,68 @@ interface Prize {
 interface UserStats {
   totalUsers: number;
   totalQuizzes: number;
-  totalSpins: number;
+  totalWalletBalance: number;
+  totalPayments: number;
+}
+
+interface UserProfile {
+  id: string;
+  email: string;
+  fullName: string | null;
+  phoneNumber: string | null;
+  location: string | null;
+  sex: string | null;
+  isAdmin: boolean;
+  bankName: string | null;
+  accountNumber: string | null;
+  accountName: string | null;
+}
+
+interface WalletData {
+  id: string;
+  userId: string;
+  balance: string;
+  totalFunded: string;
+}
+
+interface PaymentData {
+  id: string;
+  userId: string;
+  reference: string;
+  amount: string;
+  status: string;
+  accountNumber: string | null;
+  bankName: string | null;
+  createdAt: string;
+  completedAt: string | null;
+}
+
+interface QuizSessionData {
+  id: string;
+  userId: string;
+  score: number | null;
+  correctAnswers: number;
+  totalQuestions: number;
+  passed: boolean | null;
+  completedAt: string | null;
+  createdAt: string;
+}
+
+interface UserDetail {
+  profile: UserProfile;
+  wallet: WalletData | null;
+  points: { points: number; totalEarned: number; totalSpent: number } | null;
+  quizSessions: QuizSessionData[];
+  wheelSpins: { prizeWon: string; prizeValue: string | null; createdAt: string }[];
+  paymentTransactions: PaymentData[];
 }
 
 export function AdminDashboard() {
   const { profile, signOut } = useAuth();
-  const [activeTab, setActiveTab] = useState<'questions' | 'prizes' | 'users' | 'bulk'>('questions');
+  const [activeTab, setActiveTab] = useState<'questions' | 'prizes' | 'users' | 'wallets' | 'payments' | 'activity' | 'bulk'>('questions');
   const [questions, setQuestions] = useState<Question[]>([]);
   const [prizes, setPrizes] = useState<Prize[]>([]);
-  const [_stats, _setStats] = useState<UserStats>({ totalUsers: 0, totalQuizzes: 0, totalSpins: 0 });
+  const [stats, setStats] = useState<UserStats>({ totalUsers: 0, totalQuizzes: 0, totalWalletBalance: 0, totalPayments: 0 });
   const [showQuestionForm, setShowQuestionForm] = useState(false);
   const [editingQuestion, setEditingQuestion] = useState<Question | null>(null);
   const [showPrizeForm, setShowPrizeForm] = useState(false);
@@ -56,6 +109,13 @@ export function AdminDashboard() {
   const [bulkUploadStatus, setBulkUploadStatus] = useState<{ success: number; failed: number; errors: string[] } | null>(null);
   const [isUploading, setIsUploading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  
+  const [users, setUsers] = useState<UserProfile[]>([]);
+  const [wallets, setWallets] = useState<WalletData[]>([]);
+  const [payments, setPayments] = useState<PaymentData[]>([]);
+  const [quizSessions, setQuizSessions] = useState<QuizSessionData[]>([]);
+  const [selectedUser, setSelectedUser] = useState<UserDetail | null>(null);
+  const [loadingUser, setLoadingUser] = useState(false);
 
   const [questionForm, setQuestionForm] = useState({
     questionText: '',
@@ -89,6 +149,11 @@ export function AdminDashboard() {
   useEffect(() => {
     loadQuestions();
     loadPrizes();
+    loadStats();
+    loadUsers();
+    loadWallets();
+    loadPayments();
+    loadQuizSessions();
   }, []);
 
   const loadQuestions = async () => {
@@ -113,6 +178,85 @@ export function AdminDashboard() {
     } catch (error) {
       console.error('Error loading prizes:', error);
     }
+  };
+
+  const loadStats = async () => {
+    try {
+      const response = await fetch('/api/admin/stats');
+      if (response.ok) {
+        const data = await response.json();
+        setStats(data);
+      }
+    } catch (error) {
+      console.error('Error loading stats:', error);
+    }
+  };
+
+  const loadUsers = async () => {
+    try {
+      const response = await fetch('/api/admin/users');
+      if (response.ok) {
+        const data = await response.json();
+        setUsers(data);
+      }
+    } catch (error) {
+      console.error('Error loading users:', error);
+    }
+  };
+
+  const loadWallets = async () => {
+    try {
+      const response = await fetch('/api/admin/wallets');
+      if (response.ok) {
+        const data = await response.json();
+        setWallets(data);
+      }
+    } catch (error) {
+      console.error('Error loading wallets:', error);
+    }
+  };
+
+  const loadPayments = async () => {
+    try {
+      const response = await fetch('/api/admin/payments');
+      if (response.ok) {
+        const data = await response.json();
+        setPayments(data);
+      }
+    } catch (error) {
+      console.error('Error loading payments:', error);
+    }
+  };
+
+  const loadQuizSessions = async () => {
+    try {
+      const response = await fetch('/api/admin/quiz-sessions');
+      if (response.ok) {
+        const data = await response.json();
+        setQuizSessions(data);
+      }
+    } catch (error) {
+      console.error('Error loading quiz sessions:', error);
+    }
+  };
+
+  const loadUserDetails = async (userId: string) => {
+    setLoadingUser(true);
+    try {
+      const response = await fetch(`/api/admin/users/${userId}`);
+      if (response.ok) {
+        const data = await response.json();
+        setSelectedUser(data);
+      }
+    } catch (error) {
+      console.error('Error loading user details:', error);
+    }
+    setLoadingUser(false);
+  };
+
+  const getUserName = (userId: string) => {
+    const user = users.find(u => u.id === userId);
+    return user?.fullName || user?.email || userId;
   };
 
   const handleSaveQuestion = async () => {
@@ -559,6 +703,73 @@ export function AdminDashboard() {
               <Gift size={18} />
               Prizes ({prizes.length})
             </button>
+            <button
+              onClick={() => setActiveTab('users')}
+              className={`px-6 py-3 font-semibold transition-colors flex items-center gap-2 whitespace-nowrap ${
+                activeTab === 'users'
+                  ? 'border-b-2 border-blue-600 text-blue-600'
+                  : 'text-gray-600 hover:text-gray-900'
+              }`}
+              data-testid="tab-users"
+            >
+              <Users size={18} />
+              Users ({users.length})
+            </button>
+            <button
+              onClick={() => setActiveTab('wallets')}
+              className={`px-6 py-3 font-semibold transition-colors flex items-center gap-2 whitespace-nowrap ${
+                activeTab === 'wallets'
+                  ? 'border-b-2 border-blue-600 text-blue-600'
+                  : 'text-gray-600 hover:text-gray-900'
+              }`}
+              data-testid="tab-wallets"
+            >
+              <Wallet size={18} />
+              Wallets
+            </button>
+            <button
+              onClick={() => setActiveTab('payments')}
+              className={`px-6 py-3 font-semibold transition-colors flex items-center gap-2 whitespace-nowrap ${
+                activeTab === 'payments'
+                  ? 'border-b-2 border-blue-600 text-blue-600'
+                  : 'text-gray-600 hover:text-gray-900'
+              }`}
+              data-testid="tab-payments"
+            >
+              <CreditCard size={18} />
+              Payments
+            </button>
+            <button
+              onClick={() => setActiveTab('activity')}
+              className={`px-6 py-3 font-semibold transition-colors flex items-center gap-2 whitespace-nowrap ${
+                activeTab === 'activity'
+                  ? 'border-b-2 border-blue-600 text-blue-600'
+                  : 'text-gray-600 hover:text-gray-900'
+              }`}
+              data-testid="tab-activity"
+            >
+              <Activity size={18} />
+              Quiz Activity
+            </button>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+          <div className="bg-white rounded-xl p-4 shadow-sm">
+            <div className="text-sm text-gray-500">Total Users</div>
+            <div className="text-2xl font-bold text-blue-600" data-testid="text-total-users">{stats.totalUsers}</div>
+          </div>
+          <div className="bg-white rounded-xl p-4 shadow-sm">
+            <div className="text-sm text-gray-500">Total Quizzes</div>
+            <div className="text-2xl font-bold text-green-600" data-testid="text-total-quizzes">{stats.totalQuizzes}</div>
+          </div>
+          <div className="bg-white rounded-xl p-4 shadow-sm">
+            <div className="text-sm text-gray-500">Total Wallet Balance</div>
+            <div className="text-2xl font-bold text-purple-600" data-testid="text-total-balance">N{stats.totalWalletBalance.toLocaleString()}</div>
+          </div>
+          <div className="bg-white rounded-xl p-4 shadow-sm">
+            <div className="text-sm text-gray-500">Total Payments</div>
+            <div className="text-2xl font-bold text-orange-600" data-testid="text-total-payments">N{stats.totalPayments.toLocaleString()}</div>
           </div>
         </div>
 
@@ -1198,6 +1409,321 @@ OR JSON format:
                   </div>
                 ))
               )}
+            </div>
+          </div>
+        )}
+
+        {activeTab === 'users' && (
+          <div>
+            {loadingUser && (
+              <div className="flex justify-center py-8">
+                <div className="animate-spin w-8 h-8 border-4 border-blue-600 border-t-transparent rounded-full"></div>
+              </div>
+            )}
+            {!loadingUser && selectedUser ? (
+              <div>
+                <button
+                  onClick={() => setSelectedUser(null)}
+                  className="flex items-center gap-2 text-blue-600 hover:text-blue-800 mb-4"
+                  data-testid="button-back-to-users"
+                >
+                  <ChevronLeft size={20} />
+                  Back to Users
+                </button>
+                
+                <div className="bg-white rounded-xl shadow-lg p-6 mb-6">
+                  <h2 className="text-2xl font-bold mb-4">User Details</h2>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div>
+                      <h3 className="font-semibold text-gray-700 mb-2">Profile</h3>
+                      <div className="space-y-2 text-sm">
+                        <p><span className="text-gray-500">Name:</span> {selectedUser.profile.fullName || 'Not set'}</p>
+                        <p><span className="text-gray-500">Email:</span> {selectedUser.profile.email}</p>
+                        <p><span className="text-gray-500">Phone:</span> {selectedUser.profile.phoneNumber || 'Not set'}</p>
+                        <p><span className="text-gray-500">Location:</span> {selectedUser.profile.location || 'Not set'}</p>
+                        <p><span className="text-gray-500">Admin:</span> {selectedUser.profile.isAdmin ? 'Yes' : 'No'}</p>
+                      </div>
+                    </div>
+                    <div>
+                      <h3 className="font-semibold text-gray-700 mb-2">Wallet & Points</h3>
+                      <div className="space-y-2 text-sm">
+                        <p><span className="text-gray-500">Balance:</span> N{parseFloat(selectedUser.wallet?.balance || '0').toLocaleString()}</p>
+                        <p><span className="text-gray-500">Total Funded:</span> N{parseFloat(selectedUser.wallet?.totalFunded || '0').toLocaleString()}</p>
+                        <p><span className="text-gray-500">Points:</span> {selectedUser.points?.points || 0}</p>
+                        <p><span className="text-gray-500">Total Earned:</span> {selectedUser.points?.totalEarned || 0}</p>
+                        <p><span className="text-gray-500">Total Spent:</span> {selectedUser.points?.totalSpent || 0}</p>
+                      </div>
+                    </div>
+                  </div>
+                  {selectedUser.profile.bankName && (
+                    <div className="mt-4">
+                      <h3 className="font-semibold text-gray-700 mb-2">Bank Details</h3>
+                      <div className="space-y-1 text-sm">
+                        <p><span className="text-gray-500">Bank:</span> {selectedUser.profile.bankName}</p>
+                        <p><span className="text-gray-500">Account:</span> {selectedUser.profile.accountNumber}</p>
+                        <p><span className="text-gray-500">Name:</span> {selectedUser.profile.accountName}</p>
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                <div className="bg-white rounded-xl shadow-lg p-6 mb-6">
+                  <h3 className="text-xl font-bold mb-4">Quiz History ({selectedUser.quizSessions.length})</h3>
+                  {selectedUser.quizSessions.length === 0 ? (
+                    <p className="text-gray-500">No quiz sessions yet</p>
+                  ) : (
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-sm">
+                        <thead>
+                          <tr className="border-b">
+                            <th className="text-left py-2">Date</th>
+                            <th className="text-left py-2">Score</th>
+                            <th className="text-left py-2">Result</th>
+                            <th className="text-left py-2">Status</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {selectedUser.quizSessions.map((session) => (
+                            <tr key={session.id} className="border-b">
+                              <td className="py-2">{new Date(session.createdAt).toLocaleDateString()}</td>
+                              <td className="py-2">{session.correctAnswers}/{session.totalQuestions}</td>
+                              <td className="py-2">
+                                <span className={`px-2 py-1 rounded text-xs ${session.passed ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
+                                  {session.passed ? 'Passed' : 'Failed'}
+                                </span>
+                              </td>
+                              <td className="py-2">{session.completedAt ? 'Completed' : 'In Progress'}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <div className="bg-white rounded-xl shadow-lg p-6">
+                    <h3 className="text-xl font-bold mb-4">Wheel Spins ({selectedUser.wheelSpins.length})</h3>
+                    {selectedUser.wheelSpins.length === 0 ? (
+                      <p className="text-gray-500">No wheel spins yet</p>
+                    ) : (
+                      <div className="space-y-2 max-h-60 overflow-y-auto">
+                        {selectedUser.wheelSpins.map((spin, idx) => (
+                          <div key={idx} className="flex justify-between items-center text-sm border-b pb-2">
+                            <span>{spin.prizeWon}</span>
+                            <span className="text-gray-500">{new Date(spin.createdAt).toLocaleDateString()}</span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="bg-white rounded-xl shadow-lg p-6">
+                    <h3 className="text-xl font-bold mb-4">Payments ({selectedUser.paymentTransactions.length})</h3>
+                    {selectedUser.paymentTransactions.length === 0 ? (
+                      <p className="text-gray-500">No payments yet</p>
+                    ) : (
+                      <div className="space-y-2 max-h-60 overflow-y-auto">
+                        {selectedUser.paymentTransactions.map((payment) => (
+                          <div key={payment.id} className="flex justify-between items-center text-sm border-b pb-2">
+                            <span>N{parseFloat(payment.amount).toLocaleString()}</span>
+                            <span className={`px-2 py-1 rounded text-xs ${payment.status === 'completed' ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-700'}`}>
+                              {payment.status}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <div>
+                <h2 className="text-2xl font-bold mb-6">User Management</h2>
+                <div className="bg-white rounded-xl shadow-lg overflow-hidden">
+                  <div className="overflow-x-auto">
+                    <table className="w-full">
+                      <thead className="bg-gray-50">
+                        <tr>
+                          <th className="text-left py-3 px-4">Name</th>
+                          <th className="text-left py-3 px-4">Email</th>
+                          <th className="text-left py-3 px-4">Phone</th>
+                          <th className="text-left py-3 px-4">Role</th>
+                          <th className="text-left py-3 px-4">Actions</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {users.map((user) => (
+                          <tr key={user.id} className="border-b hover:bg-gray-50">
+                            <td className="py-3 px-4">{user.fullName || 'Not set'}</td>
+                            <td className="py-3 px-4">{user.email}</td>
+                            <td className="py-3 px-4">{user.phoneNumber || '-'}</td>
+                            <td className="py-3 px-4">
+                              <span className={`px-2 py-1 rounded text-xs ${user.isAdmin ? 'bg-purple-100 text-purple-700' : 'bg-gray-100 text-gray-700'}`}>
+                                {user.isAdmin ? 'Admin' : 'User'}
+                              </span>
+                            </td>
+                            <td className="py-3 px-4">
+                              <button
+                                onClick={() => loadUserDetails(user.id)}
+                                className="flex items-center gap-1 text-blue-600 hover:text-blue-800"
+                                data-testid={`button-view-user-${user.id}`}
+                              >
+                                <Eye size={16} />
+                                View
+                              </button>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {activeTab === 'wallets' && (
+          <div>
+            <h2 className="text-2xl font-bold mb-6">Wallet Management</h2>
+            <div className="bg-white rounded-xl shadow-lg overflow-hidden">
+              <div className="overflow-x-auto">
+                <table className="w-full">
+                  <thead className="bg-gray-50">
+                    <tr>
+                      <th className="text-left py-3 px-4">User</th>
+                      <th className="text-left py-3 px-4">Balance</th>
+                      <th className="text-left py-3 px-4">Total Funded</th>
+                      <th className="text-left py-3 px-4">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {wallets.map((wallet) => (
+                      <tr key={wallet.id} className="border-b hover:bg-gray-50">
+                        <td className="py-3 px-4">{getUserName(wallet.userId)}</td>
+                        <td className="py-3 px-4 font-semibold">N{parseFloat(wallet.balance).toLocaleString()}</td>
+                        <td className="py-3 px-4">N{parseFloat(wallet.totalFunded).toLocaleString()}</td>
+                        <td className="py-3 px-4">
+                          <button
+                            onClick={() => {
+                              loadUserDetails(wallet.userId);
+                              setActiveTab('users');
+                            }}
+                            className="flex items-center gap-1 text-blue-600 hover:text-blue-800"
+                            data-testid={`button-view-wallet-user-${wallet.id}`}
+                          >
+                            <Eye size={16} />
+                            View User
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {activeTab === 'payments' && (
+          <div>
+            <h2 className="text-2xl font-bold mb-6">Payment Transactions</h2>
+            <div className="bg-white rounded-xl shadow-lg overflow-hidden">
+              <div className="overflow-x-auto">
+                <table className="w-full">
+                  <thead className="bg-gray-50">
+                    <tr>
+                      <th className="text-left py-3 px-4">Date</th>
+                      <th className="text-left py-3 px-4">User</th>
+                      <th className="text-left py-3 px-4">Amount</th>
+                      <th className="text-left py-3 px-4">Reference</th>
+                      <th className="text-left py-3 px-4">Status</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {payments.length === 0 ? (
+                      <tr>
+                        <td colSpan={5} className="py-8 text-center text-gray-500">No payments recorded yet</td>
+                      </tr>
+                    ) : (
+                      payments.map((payment) => (
+                        <tr key={payment.id} className="border-b hover:bg-gray-50">
+                          <td className="py-3 px-4">{new Date(payment.createdAt).toLocaleDateString()}</td>
+                          <td className="py-3 px-4">{getUserName(payment.userId)}</td>
+                          <td className="py-3 px-4 font-semibold">N{parseFloat(payment.amount).toLocaleString()}</td>
+                          <td className="py-3 px-4 text-sm text-gray-500">{payment.reference}</td>
+                          <td className="py-3 px-4">
+                            <span className={`px-2 py-1 rounded text-xs ${
+                              payment.status === 'completed' ? 'bg-green-100 text-green-700' : 
+                              payment.status === 'pending' ? 'bg-yellow-100 text-yellow-700' : 
+                              'bg-red-100 text-red-700'
+                            }`}>
+                              {payment.status}
+                            </span>
+                          </td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {activeTab === 'activity' && (
+          <div>
+            <h2 className="text-2xl font-bold mb-6">Quiz Activity</h2>
+            <div className="bg-white rounded-xl shadow-lg overflow-hidden">
+              <div className="overflow-x-auto">
+                <table className="w-full">
+                  <thead className="bg-gray-50">
+                    <tr>
+                      <th className="text-left py-3 px-4">Date</th>
+                      <th className="text-left py-3 px-4">User</th>
+                      <th className="text-left py-3 px-4">Score</th>
+                      <th className="text-left py-3 px-4">Result</th>
+                      <th className="text-left py-3 px-4">Status</th>
+                      <th className="text-left py-3 px-4">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {quizSessions.length === 0 ? (
+                      <tr>
+                        <td colSpan={6} className="py-8 text-center text-gray-500">No quiz sessions yet</td>
+                      </tr>
+                    ) : (
+                      quizSessions.map((session) => (
+                        <tr key={session.id} className="border-b hover:bg-gray-50">
+                          <td className="py-3 px-4">{new Date(session.createdAt).toLocaleDateString()}</td>
+                          <td className="py-3 px-4">{getUserName(session.userId)}</td>
+                          <td className="py-3 px-4">{session.correctAnswers}/{session.totalQuestions}</td>
+                          <td className="py-3 px-4">
+                            <span className={`px-2 py-1 rounded text-xs ${session.passed ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
+                              {session.passed ? 'Passed' : 'Failed'}
+                            </span>
+                          </td>
+                          <td className="py-3 px-4">{session.completedAt ? 'Completed' : 'In Progress'}</td>
+                          <td className="py-3 px-4">
+                            <button
+                              onClick={() => {
+                                loadUserDetails(session.userId);
+                                setActiveTab('users');
+                              }}
+                              className="flex items-center gap-1 text-blue-600 hover:text-blue-800"
+                              data-testid={`button-view-session-user-${session.id}`}
+                            >
+                              <Eye size={16} />
+                              View User
+                            </button>
+                          </td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
             </div>
           </div>
         )}
