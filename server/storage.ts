@@ -57,6 +57,7 @@ export interface IStorage {
   getQuestion(id: string): Promise<Question | undefined>;
   createQuestion(question: InsertQuestion): Promise<Question>;
   updateQuestion(id: string, updates: Partial<InsertQuestion>): Promise<Question | undefined>;
+  deleteQuestion(id: string): Promise<void>;
   
   // Quiz Sessions
   getQuizSession(id: string): Promise<QuizSession | undefined>;
@@ -79,6 +80,7 @@ export interface IStorage {
   getPrize(id: string): Promise<PrizeConfig | undefined>;
   createPrize(prize: InsertPrizeConfig): Promise<PrizeConfig>;
   updatePrize(id: string, updates: Partial<InsertPrizeConfig>): Promise<PrizeConfig | undefined>;
+  deletePrize(id: string): Promise<void>;
   
   // Wheel Spins
   getUserWheelSpins(userId: string): Promise<WheelSpin[]>;
@@ -182,6 +184,10 @@ export class DbStorage implements IStorage {
     return result[0];
   }
 
+  async deleteQuestion(id: string) {
+    await db.delete(questions).where(eq(questions.id, id));
+  }
+
   // Quiz Sessions
   async getQuizSession(id: string) {
     const result = await db.select().from(quizSessions).where(eq(quizSessions.id, id));
@@ -262,6 +268,10 @@ export class DbStorage implements IStorage {
       .where(eq(prizeConfig.id, id))
       .returning();
     return result[0];
+  }
+
+  async deletePrize(id: string) {
+    await db.delete(prizeConfig).where(eq(prizeConfig.id, id));
   }
 
   // Wheel Spins

@@ -21,7 +21,7 @@ function App() {
     return <Auth />;
   }
 
-  if (profile?.is_admin) {
+  if (profile?.isAdmin) {
     return <AdminDashboard />;
   }
 

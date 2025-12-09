@@ -179,6 +179,15 @@ export function registerRoutes(app: Express) {
     }
   });
 
+  app.delete("/api/questions/:id", async (req, res) => {
+    try {
+      await storage.deleteQuestion(req.params.id);
+      res.json({ success: true });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
   // Quiz Sessions
   const QUIZ_COST = 100;
   
@@ -321,6 +330,15 @@ export function registerRoutes(app: Express) {
         return res.status(404).json({ error: "Prize not found" });
       }
       res.json(prize);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.delete("/api/prizes/:id", async (req, res) => {
+    try {
+      await storage.deletePrize(req.params.id);
+      res.json({ success: true });
     } catch (error: any) {
       res.status(500).json({ error: error.message });
     }
