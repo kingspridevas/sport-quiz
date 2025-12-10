@@ -266,7 +266,9 @@ export function UserDashboard() {
             </div>
             <p className="text-4xl font-bold" data-testid="text-total-points">{userPoints?.points || 0}</p>
             <p className="text-sm opacity-90 mt-2">
-              {10 - (userPoints?.points || 0)} more to spin the wheel
+              {(userPoints?.points || 0) >= 10 
+                ? "Ready to spin the wheel!" 
+                : `${10 - (userPoints?.points || 0)} more to spin the wheel`}
             </p>
           </div>
 
