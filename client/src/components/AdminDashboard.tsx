@@ -71,6 +71,9 @@ interface PaymentData {
   status: string;
   accountNumber: string | null;
   bankName: string | null;
+  virtualAccountNumber: string | null;
+  virtualAccountName: string | null;
+  virtualAccountBank: string | null;
   createdAt: string;
   completedAt: string | null;
 }
@@ -117,6 +120,7 @@ export function AdminDashboard() {
   const [selectedUser, setSelectedUser] = useState<UserDetail | null>(null);
   const [loadingUser, setLoadingUser] = useState(false);
   const [editingUser, setEditingUser] = useState(false);
+  const [processingAccount, setProcessingAccount] = useState<string | null>(null);
   const [userEditForm, setUserEditForm] = useState({
     fullName: '',
     phoneNumber: '',
@@ -234,6 +238,78 @@ export function AdminDashboard() {
       }
     } catch (error) {
       console.error('Error loading payments:', error);
+    }
+  };
+
+  const handleDeactivateAccount = async (payment: PaymentData) => {
+    if (!payment.virtualAccountNumber) {
+      alert('No virtual account number available');
+      return;
+    }
+    
+    if (!confirm(`Are you sure you want to deactivate virtual account ${payment.virtualAccountNumber}?`)) {
+      return;
+    }
+    
+    setProcessingAccount(payment.id);
+    try {
+      const response = await fetch('/api/admin/virtual-accounts/deactivate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          accountNumber: payment.virtualAccountNumber,
+          transactionId: payment.id
+        })
+      });
+      
+      if (response.ok) {
+        alert('Virtual account deactivated successfully');
+        loadPayments();
+      } else {
+        const error = await response.json();
+        alert(`Failed to deactivate: ${error.error}`);
+      }
+    } catch (error) {
+      console.error('Error deactivating account:', error);
+      alert('Failed to deactivate virtual account');
+    } finally {
+      setProcessingAccount(null);
+    }
+  };
+
+  const handleReactivateAccount = async (payment: PaymentData) => {
+    if (!payment.virtualAccountNumber) {
+      alert('No virtual account number available');
+      return;
+    }
+    
+    if (!confirm(`Are you sure you want to reactivate virtual account ${payment.virtualAccountNumber}?`)) {
+      return;
+    }
+    
+    setProcessingAccount(payment.id);
+    try {
+      const response = await fetch('/api/admin/virtual-accounts/reactivate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          accountNumber: payment.virtualAccountNumber,
+          transactionId: payment.id
+        })
+      });
+      
+      if (response.ok) {
+        alert('Virtual account reactivated successfully');
+        loadPayments();
+      } else {
+        const error = await response.json();
+        alert(`Failed to reactivate: ${error.error}`);
+      }
+    } catch (error) {
+      console.error('Error reactivating account:', error);
+      alert('Failed to reactivate virtual account');
+    } finally {
+      setProcessingAccount(null);
     }
   };
 
@@ -1815,38 +1891,76 @@ OR JSON format:
         {activeTab === 'payments' && (
           <div>
             <h2 className="text-2xl font-bold mb-6">Payment Transactions</h2>
-            <div className="bg-white rounded-xl shadow-lg overflow-hidden">
+            <div className="bg-white dark:bg-gray-800 rounded-xl shadow-lg overflow-hidden">
               <div className="overflow-x-auto">
                 <table className="w-full">
-                  <thead className="bg-gray-50">
+                  <thead className="bg-gray-50 dark:bg-gray-700">
                     <tr>
                       <th className="text-left py-3 px-4">Date</th>
                       <th className="text-left py-3 px-4">User</th>
                       <th className="text-left py-3 px-4">Amount</th>
+                      <th className="text-left py-3 px-4">Virtual Account</th>
                       <th className="text-left py-3 px-4">Reference</th>
                       <th className="text-left py-3 px-4">Status</th>
+                      <th className="text-left py-3 px-4">Actions</th>
                     </tr>
                   </thead>
                   <tbody>
                     {payments.length === 0 ? (
                       <tr>
-                        <td colSpan={5} className="py-8 text-center text-gray-500">No payments recorded yet</td>
+                        <td colSpan={7} className="py-8 text-center text-gray-500">No payments recorded yet</td>
                       </tr>
                     ) : (
                       payments.map((payment) => (
-                        <tr key={payment.id} className="border-b hover:bg-gray-50">
+                        <tr key={payment.id} className="border-b hover:bg-gray-50 dark:hover:bg-gray-700">
                           <td className="py-3 px-4">{new Date(payment.createdAt).toLocaleDateString()}</td>
                           <td className="py-3 px-4">{getUserName(payment.userId)}</td>
                           <td className="py-3 px-4 font-semibold">N{parseFloat(payment.amount).toLocaleString()}</td>
+                          <td className="py-3 px-4">
+                            {payment.virtualAccountNumber ? (
+                              <div className="text-sm">
+                                <div className="font-medium">{payment.virtualAccountNumber}</div>
+                                <div className="text-gray-500 text-xs">{payment.virtualAccountBank}</div>
+                              </div>
+                            ) : (
+                              <span className="text-gray-400 text-sm">N/A</span>
+                            )}
+                          </td>
                           <td className="py-3 px-4 text-sm text-gray-500">{payment.reference}</td>
                           <td className="py-3 px-4">
                             <span className={`px-2 py-1 rounded text-xs ${
                               payment.status === 'completed' ? 'bg-green-100 text-green-700' : 
                               payment.status === 'pending' ? 'bg-yellow-100 text-yellow-700' : 
+                              payment.status === 'deactivated' ? 'bg-gray-100 text-gray-700' :
                               'bg-red-100 text-red-700'
                             }`}>
                               {payment.status}
                             </span>
+                          </td>
+                          <td className="py-3 px-4">
+                            {payment.virtualAccountNumber && (
+                              <div className="flex items-center gap-2">
+                                {payment.status === 'deactivated' ? (
+                                  <button
+                                    onClick={() => handleReactivateAccount(payment)}
+                                    disabled={processingAccount === payment.id}
+                                    className="px-2 py-1 text-xs bg-green-500 text-white rounded hover:bg-green-600 disabled:opacity-50"
+                                    data-testid={`button-reactivate-${payment.id}`}
+                                  >
+                                    {processingAccount === payment.id ? 'Processing...' : 'Reactivate'}
+                                  </button>
+                                ) : payment.status !== 'completed' && (
+                                  <button
+                                    onClick={() => handleDeactivateAccount(payment)}
+                                    disabled={processingAccount === payment.id}
+                                    className="px-2 py-1 text-xs bg-red-500 text-white rounded hover:bg-red-600 disabled:opacity-50"
+                                    data-testid={`button-deactivate-${payment.id}`}
+                                  >
+                                    {processingAccount === payment.id ? 'Processing...' : 'Deactivate'}
+                                  </button>
+                                )}
+                              </div>
+                            )}
                           </td>
                         </tr>
                       ))

@@ -2,7 +2,7 @@ import type { Express } from "express";
 import bcrypt from "bcryptjs";
 import { storage } from "./storage.js";
 import { authSignupSchema, authLoginSchema, insertQuestionSchema, insertQuizSessionSchema, insertQuizAnswerSchema } from "../shared/schema.js";
-import { createVirtualAccount, reallocateVirtualAccount } from "./psb-service.js";
+import { createVirtualAccount, reallocateVirtualAccount, deactivateVirtualAccount, reactivateVirtualAccount } from "./psb-service.js";
 
 export function registerRoutes(app: Express) {
   app.post("/api/auth/signup", async (req, res) => {
@@ -708,6 +708,48 @@ export function registerRoutes(app: Express) {
       const payments = await storage.getAllPaymentTransactions();
       res.json(payments);
     } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.post("/api/admin/virtual-accounts/deactivate", async (req, res) => {
+    try {
+      const { accountNumber, transactionId } = req.body;
+      
+      if (!accountNumber) {
+        return res.status(400).json({ error: "Account number is required" });
+      }
+
+      const result = await deactivateVirtualAccount(accountNumber);
+      
+      if (transactionId) {
+        await storage.updatePaymentTransaction(transactionId, { status: "deactivated" });
+      }
+
+      res.json({ success: true, message: "Virtual account deactivated successfully", data: result });
+    } catch (error: any) {
+      console.error("Deactivate virtual account error:", error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.post("/api/admin/virtual-accounts/reactivate", async (req, res) => {
+    try {
+      const { accountNumber, transactionId } = req.body;
+      
+      if (!accountNumber) {
+        return res.status(400).json({ error: "Account number is required" });
+      }
+
+      const result = await reactivateVirtualAccount(accountNumber);
+      
+      if (transactionId) {
+        await storage.updatePaymentTransaction(transactionId, { status: "pending" });
+      }
+
+      res.json({ success: true, message: "Virtual account reactivated successfully", data: result });
+    } catch (error: any) {
+      console.error("Reactivate virtual account error:", error);
       res.status(500).json({ error: error.message });
     }
   });
