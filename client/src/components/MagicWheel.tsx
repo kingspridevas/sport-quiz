@@ -77,10 +77,14 @@ export function MagicWheel({ onComplete }: MagicWheelProps) {
       const selectedPrize = result.prize;
       
       // Calculate wheel rotation
+      // The pointer is at the top (0 degrees), wheel rotates clockwise
+      // To land on prizeIndex, we need to rotate so that segment's center is at top
       const spins = 5 + Math.random() * 5;
       const prizeIndex = prizes.findIndex((p) => p.id === selectedPrize.id);
       const segmentAngle = 360 / prizes.length;
-      const targetRotation = 360 * spins + prizeIndex * segmentAngle + segmentAngle / 2;
+      // Rotate clockwise: subtract the prize position from full rotation
+      // Adding (360 - prizeIndex * segmentAngle - segmentAngle / 2) positions the prize at the top
+      const targetRotation = 360 * spins + (360 - prizeIndex * segmentAngle - segmentAngle / 2);
 
       setRotation(targetRotation);
 
