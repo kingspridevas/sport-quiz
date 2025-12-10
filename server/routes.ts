@@ -348,10 +348,28 @@ export function registerRoutes(app: Express) {
   app.post("/api/wheel/spin", async (req, res) => {
     try {
       const { userId } = req.body;
+      const POINTS_REQUIRED = 10;
+      
+      // Check user points
+      const userPoints = await storage.getUserPoints(userId);
+      if (!userPoints || userPoints.points < POINTS_REQUIRED) {
+        return res.status(400).json({ error: `Insufficient points. You need ${POINTS_REQUIRED} points to spin.` });
+      }
+      
+      // Deduct points
+      await storage.updateUserPoints(userPoints.id, {
+        points: userPoints.points - POINTS_REQUIRED,
+        totalSpent: userPoints.totalSpent + POINTS_REQUIRED
+      });
       
       // Get active prizes
       const prizes = await storage.getActivePrizes();
       if (prizes.length === 0) {
+        // Refund points if no prizes available
+        await storage.updateUserPoints(userPoints.id, {
+          points: userPoints.points,
+          totalSpent: userPoints.totalSpent
+        });
         return res.status(400).json({ error: "No active prizes available" });
       }
 
