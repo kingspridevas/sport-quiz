@@ -355,7 +355,7 @@ export function registerRoutes(app: Express) {
   app.post("/api/wheel/spin", async (req, res) => {
     try {
       const { userId } = req.body;
-      const POINTS_REQUIRED = 10;
+      const POINTS_REQUIRED = 5;
       
       // Check user points
       const userPoints = await storage.getUserPoints(userId);
@@ -380,16 +380,47 @@ export function registerRoutes(app: Express) {
         return res.status(400).json({ error: "No active prizes available" });
       }
 
-      // Simple weighted random selection
-      const totalWeight = prizes.reduce((sum, p) => sum + p.probabilityWeight, 0);
-      let random = Math.random() * totalWeight;
-      let selectedPrize = prizes[0];
+      // Check if this is the user's first spin - prevent winning on first spin
+      const previousSpins = await storage.getUserWheelSpins(userId);
+      const isFirstSpin = previousSpins.length === 0;
+      
+      let selectedPrize;
+      
+      if (isFirstSpin) {
+        // First spin: only allow non-winning prizes (thank_you or retry)
+        const nonWinningPrizes = prizes.filter(p => 
+          p.prizeType === 'thank_you' || p.prizeType === 'retry'
+        );
+        
+        if (nonWinningPrizes.length > 0) {
+          // Weighted selection among non-winning prizes
+          const totalWeight = nonWinningPrizes.reduce((sum, p) => sum + p.probabilityWeight, 0);
+          let random = Math.random() * totalWeight;
+          selectedPrize = nonWinningPrizes[0];
+          
+          for (const prize of nonWinningPrizes) {
+            random -= prize.probabilityWeight;
+            if (random <= 0) {
+              selectedPrize = prize;
+              break;
+            }
+          }
+        } else {
+          // Fallback to first prize if no non-winning prizes exist
+          selectedPrize = prizes[0];
+        }
+      } else {
+        // Normal weighted random selection for subsequent spins
+        const totalWeight = prizes.reduce((sum, p) => sum + p.probabilityWeight, 0);
+        let random = Math.random() * totalWeight;
+        selectedPrize = prizes[0];
 
-      for (const prize of prizes) {
-        random -= prize.probabilityWeight;
-        if (random <= 0) {
-          selectedPrize = prize;
-          break;
+        for (const prize of prizes) {
+          random -= prize.probabilityWeight;
+          if (random <= 0) {
+            selectedPrize = prize;
+            break;
+          }
         }
       }
 
