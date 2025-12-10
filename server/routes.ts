@@ -268,7 +268,7 @@ export function registerRoutes(app: Express) {
       if (updates.status === 'completed' && updates.pointsEarned > 0) {
         const userPoints = await storage.getUserPoints(session.userId);
         if (userPoints) {
-          await storage.updateUserPoints(userPoints.id, {
+          await storage.updateUserPoints(session.userId, {
             points: userPoints.points + updates.pointsEarned,
             totalEarned: userPoints.totalEarned + updates.pointsEarned,
           });
