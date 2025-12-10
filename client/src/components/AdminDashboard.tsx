@@ -1400,6 +1400,93 @@ OR JSON format:
               </button>
             </div>
 
+            {/* Probability Calculator */}
+            {prizes.length > 0 && (
+              <div className="bg-white rounded-xl shadow-lg p-6 mb-6">
+                <h3 className="text-lg font-bold mb-4 flex items-center gap-2">
+                  <Calculator size={20} className="text-blue-600" />
+                  Winning Probability Calculator
+                </h3>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="border-b">
+                        <th className="text-left py-2 px-3">Prize</th>
+                        <th className="text-left py-2 px-3">Type</th>
+                        <th className="text-right py-2 px-3">Weight</th>
+                        <th className="text-right py-2 px-3">Win Chance</th>
+                        <th className="text-center py-2 px-3">Status</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {(() => {
+                        const activePrizes = prizes.filter(p => p.isActive);
+                        const totalWeight = activePrizes.reduce((sum, p) => sum + p.probabilityWeight, 0);
+                        
+                        return prizes.map((prize) => {
+                          const percentage = prize.isActive && totalWeight > 0
+                            ? ((prize.probabilityWeight / totalWeight) * 100).toFixed(1)
+                            : '0.0';
+                          const isWinningPrize = prize.prizeType === 'cash' || prize.prizeType === 'item' || prize.prizeType === 'draw';
+                          
+                          return (
+                            <tr key={prize.id} className={`border-b ${!prize.isActive ? 'opacity-50' : ''}`}>
+                              <td className="py-2 px-3 font-medium">{prize.prizeName}</td>
+                              <td className="py-2 px-3">
+                                <span className={`px-2 py-1 rounded text-xs font-semibold ${
+                                  prize.prizeType === 'cash' ? 'bg-green-100 text-green-700' :
+                                  prize.prizeType === 'item' ? 'bg-blue-100 text-blue-700' :
+                                  prize.prizeType === 'draw' ? 'bg-purple-100 text-purple-700' :
+                                  prize.prizeType === 'retry' ? 'bg-yellow-100 text-yellow-700' :
+                                  'bg-gray-100 text-gray-700'
+                                }`}>
+                                  {prize.prizeType}
+                                </span>
+                              </td>
+                              <td className="py-2 px-3 text-right">{prize.probabilityWeight}</td>
+                              <td className="py-2 px-3 text-right">
+                                <span className={`font-bold ${isWinningPrize ? 'text-green-600' : 'text-gray-600'}`}>
+                                  {percentage}%
+                                </span>
+                              </td>
+                              <td className="py-2 px-3 text-center">
+                                <span className={`px-2 py-1 rounded text-xs font-semibold ${
+                                  prize.isActive ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'
+                                }`}>
+                                  {prize.isActive ? 'Active' : 'Inactive'}
+                                </span>
+                              </td>
+                            </tr>
+                          );
+                        });
+                      })()}
+                    </tbody>
+                    <tfoot>
+                      <tr className="bg-gray-50 font-bold">
+                        <td className="py-2 px-3">Total (Active Only)</td>
+                        <td className="py-2 px-3"></td>
+                        <td className="py-2 px-3 text-right">
+                          {prizes.filter(p => p.isActive).reduce((sum, p) => sum + p.probabilityWeight, 0)}
+                        </td>
+                        <td className="py-2 px-3 text-right">100%</td>
+                        <td className="py-2 px-3"></td>
+                      </tr>
+                    </tfoot>
+                  </table>
+                </div>
+                <div className="mt-4 p-3 bg-blue-50 rounded-lg text-sm text-blue-800">
+                  <p className="font-semibold mb-1">How it works:</p>
+                  <ul className="list-disc pl-5 space-y-1">
+                    <li>Higher weight = higher chance of landing on that prize</li>
+                    <li>Win Chance = (Prize Weight / Total Weight) x 100</li>
+                    <li>To decrease overall wins: increase "Thank You" and "Try Again" weights</li>
+                    <li>To increase overall wins: decrease "Thank You" and "Try Again" weights</li>
+                    <li>First-time spinners always get "Thank You" or "Try Again"</li>
+                  </ul>
+                </div>
+              </div>
+            )}
+
             {showPrizeForm && (
               <div className="bg-white rounded-xl shadow-lg p-6 mb-6">
                 <div className="flex justify-between items-center gap-2 mb-4">
