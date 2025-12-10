@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { useAuth } from '../contexts/AuthContext';
-import { Plus, Edit2, Trash2, Save, X, Settings, LogOut, Upload, Download, HelpCircle, Gift, FileSpreadsheet, Users, Wallet, CreditCard, Activity, Eye, ChevronLeft } from 'lucide-react';
+import { Plus, Edit2, Trash2, Save, X, Settings, LogOut, Upload, Download, HelpCircle, Gift, FileSpreadsheet, Users, Wallet, CreditCard, Activity, Eye, ChevronLeft, Calculator } from 'lucide-react';
 
 interface Question {
   id: string;
