@@ -4,7 +4,7 @@ import { Sparkles, Gift, AlertCircle, Loader2 } from 'lucide-react';
 import { apiRequest } from '@/lib/queryClient';
 import type { PrizeConfig, UserPoints } from '@shared/schema';
 
-const POINTS_REQUIRED = 10;
+const POINTS_REQUIRED = 5;
 
 interface MagicWheelProps {
   onComplete: () => void;
