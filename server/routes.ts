@@ -259,6 +259,12 @@ export function registerRoutes(app: Express) {
   app.patch("/api/quiz/session/:id", async (req, res) => {
     try {
       const updates = req.body;
+      
+      // Convert completedAt string to Date if present
+      if (updates.completedAt && typeof updates.completedAt === 'string') {
+        updates.completedAt = new Date(updates.completedAt);
+      }
+      
       const session = await storage.updateQuizSession(req.params.id, updates);
       if (!session) {
         return res.status(404).json({ error: "Session not found" });
@@ -277,6 +283,7 @@ export function registerRoutes(app: Express) {
       
       res.json(session);
     } catch (error: any) {
+      console.error('Quiz session update error:', error);
       res.status(500).json({ error: error.message });
     }
   });
