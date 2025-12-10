@@ -364,7 +364,7 @@ export function registerRoutes(app: Express) {
       }
       
       // Deduct points
-      await storage.updateUserPoints(userPoints.id, {
+      await storage.updateUserPoints(userId, {
         points: userPoints.points - POINTS_REQUIRED,
         totalSpent: userPoints.totalSpent + POINTS_REQUIRED
       });
@@ -373,7 +373,7 @@ export function registerRoutes(app: Express) {
       const prizes = await storage.getActivePrizes();
       if (prizes.length === 0) {
         // Refund points if no prizes available
-        await storage.updateUserPoints(userPoints.id, {
+        await storage.updateUserPoints(userId, {
           points: userPoints.points,
           totalSpent: userPoints.totalSpent
         });
