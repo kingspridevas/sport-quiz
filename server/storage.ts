@@ -376,7 +376,7 @@ export class DbStorage implements IStorage {
     return db
       .select()
       .from(quizSessions)
-      .orderBy(desc(quizSessions.createdAt));
+      .orderBy(desc(quizSessions.startedAt));
   }
 
   async getAdminStats() {
