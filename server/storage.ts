@@ -99,6 +99,7 @@ export interface IStorage {
   getPaymentTransactionByAccount(accountNumber: string): Promise<PaymentTransaction | undefined>;
   getUserPaymentTransactions(userId: string): Promise<PaymentTransaction[]>;
   getAllPaymentTransactions(): Promise<PaymentTransaction[]>;
+  getReusableVirtualAccount(): Promise<PaymentTransaction | undefined>;
   createPaymentTransaction(transaction: InsertPaymentTransaction): Promise<PaymentTransaction>;
   updatePaymentTransaction(id: string, updates: Partial<InsertPaymentTransaction>): Promise<PaymentTransaction | undefined>;
   
@@ -370,6 +371,24 @@ export class DbStorage implements IStorage {
       .select()
       .from(paymentTransactions)
       .orderBy(desc(paymentTransactions.createdAt));
+  }
+
+  async getReusableVirtualAccount() {
+    // Find expired or completed transactions with valid account numbers
+    const now = new Date();
+    const result = await db
+      .select()
+      .from(paymentTransactions)
+      .where(
+        and(
+          drizzleSql`${paymentTransactions.virtualAccountNumber} IS NOT NULL`,
+          drizzleSql`${paymentTransactions.virtualAccountNumber} != ''`,
+          drizzleSql`(${paymentTransactions.status} IN ('expired', 'completed') OR ${paymentTransactions.expiresAt} < ${now})`
+        )
+      )
+      .orderBy(desc(paymentTransactions.createdAt))
+      .limit(1);
+    return result[0];
   }
 
   async getAllQuizSessions() {

@@ -2,7 +2,7 @@ import type { Express } from "express";
 import bcrypt from "bcryptjs";
 import { storage } from "./storage.js";
 import { authSignupSchema, authLoginSchema, insertQuestionSchema, insertQuizSessionSchema, insertQuizAnswerSchema } from "../shared/schema.js";
-import { createVirtualAccount } from "./psb-service.js";
+import { createVirtualAccount, reallocateVirtualAccount } from "./psb-service.js";
 
 export function registerRoutes(app: Express) {
   app.post("/api/auth/signup", async (req, res) => {
@@ -480,13 +480,42 @@ export function registerRoutes(app: Express) {
       }
 
       const reference = `SQ${Date.now()}${userId.substring(0, 8)}`;
+      let psbResponse;
+      let usedReallocation = false;
       
-      const psbResponse = await createVirtualAccount({
-        amount: parseFloat(amount),
-        customerName: userName,
-        reference,
-        description: "Wallet Funding",
-      });
+      try {
+        // First, try to create a new virtual account
+        psbResponse = await createVirtualAccount({
+          amount: parseFloat(amount),
+          customerName: userName,
+          reference,
+          description: "Wallet Funding",
+        });
+      } catch (createError: any) {
+        console.log("Virtual account creation failed, attempting reallocation:", createError.message);
+        
+        // If creation fails, try to reallocate an existing account
+        const reusableAccount = await storage.getReusableVirtualAccount();
+        
+        if (reusableAccount && reusableAccount.virtualAccountNumber) {
+          try {
+            psbResponse = await reallocateVirtualAccount({
+              accountNumber: reusableAccount.virtualAccountNumber,
+              newReference: reference,
+              amount: parseFloat(amount),
+              customerName: userName,
+              description: "Wallet Funding",
+            });
+            usedReallocation = true;
+            console.log("Successfully reallocated virtual account:", reusableAccount.virtualAccountNumber);
+          } catch (reallocateError: any) {
+            console.error("Reallocation also failed:", reallocateError.message);
+            throw createError; // Throw the original error if reallocation also fails
+          }
+        } else {
+          throw createError; // No reusable accounts available
+        }
+      }
 
       if (!psbResponse.customer?.account) {
         throw new Error("Failed to get virtual account details from 9PSB");
@@ -515,7 +544,8 @@ export function registerRoutes(app: Express) {
           bankName: transaction.virtualAccountBank,
           amount: transaction.amount,
           reference: transaction.reference,
-          expiresAt: transaction.expiresAt
+          expiresAt: transaction.expiresAt,
+          reallocated: usedReallocation
         }
       });
     } catch (error: any) {
