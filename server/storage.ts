@@ -260,11 +260,11 @@ export class DbStorage implements IStorage {
 
   // Prize Config
   async getActivePrizes() {
-    return db.select().from(prizeConfig).where(eq(prizeConfig.isActive, true));
+    return db.select().from(prizeConfig).where(eq(prizeConfig.isActive, true)).orderBy(prizeConfig.id);
   }
 
   async getAllPrizes() {
-    return db.select().from(prizeConfig);
+    return db.select().from(prizeConfig).orderBy(prizeConfig.id);
   }
 
   async getPrize(id: string) {
