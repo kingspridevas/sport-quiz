@@ -266,9 +266,9 @@ export function UserDashboard() {
             </div>
             <p className="text-4xl font-bold" data-testid="text-total-points">{userPoints?.points || 0}</p>
             <p className="text-sm opacity-90 mt-2">
-              {(userPoints?.points || 0) >= 10 
+              {(userPoints?.points || 0) >= 5 
                 ? "Ready to spin the wheel!" 
-                : `${10 - (userPoints?.points || 0)} more to spin the wheel`}
+                : `${5 - (userPoints?.points || 0)} more to spin the wheel`}
             </p>
           </div>
 
@@ -311,12 +311,12 @@ export function UserDashboard() {
               </button>
               <button
                 onClick={() => setViewMode('wheel')}
-                disabled={(userPoints?.points || 0) < 10}
+                disabled={(userPoints?.points || 0) < 5}
                 className="w-full bg-yellow-600 text-white py-4 rounded-lg font-semibold hover:bg-yellow-700 transition-colors flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
                 data-testid="button-spin-wheel"
               >
                 <Gift size={24} />
-                Spin Magic Wheel {(userPoints?.points || 0) < 10 && `(Need ${10 - (userPoints?.points || 0)} more points)`}
+                Spin Magic Wheel {(userPoints?.points || 0) < 5 && `(Need ${5 - (userPoints?.points || 0)} more points)`}
               </button>
             </div>
 
@@ -326,7 +326,7 @@ export function UserDashboard() {
                 <li>Fund your wallet to play quiz sessions</li>
                 <li>Each session costs ₦100 for 5 questions</li>
                 <li>Answer at least 3 correctly to earn 1 point</li>
-                <li>Collect 10 points to spin the Magic Wheel</li>
+                <li>Collect 5 points to spin the Magic Wheel</li>
                 <li>Win cash prizes, items, or entries to weekly draws</li>
               </ul>
             </div>
