@@ -136,3 +136,110 @@ export async function confirmPayment(reference: string): Promise<any> {
 
   return response.json();
 }
+
+interface ReallocateRequest {
+  accountNumber: string;
+  newReference: string;
+  amount: number;
+  customerName: string;
+  description?: string;
+}
+
+export async function reallocateVirtualAccount(
+  request: ReallocateRequest
+): Promise<VirtualAccountResponse> {
+  const token = await authenticate();
+
+  const payload = {
+    transaction: {
+      reference: request.newReference,
+    },
+    order: {
+      amount: request.amount,
+      currency: "NGN",
+      description: request.description || "Wallet Funding",
+      country: "NGA",
+      amounttype: "EXACT",
+    },
+    customer: {
+      account: {
+        name: request.customerName,
+        number: request.accountNumber,
+        expiry: {
+          hours: 1,
+        },
+      },
+    },
+  };
+
+  const response = await fetch(`${PSB_BASE_URL}/reallocate`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify(payload),
+  });
+
+  const data = await response.json() as VirtualAccountResponse;
+
+  if (data.code !== "00") {
+    throw new Error(`Failed to reallocate virtual account: ${data.message}`);
+  }
+
+  return data;
+}
+
+export async function deactivateVirtualAccount(accountNumber: string): Promise<any> {
+  const token = await authenticate();
+
+  const response = await fetch(`${PSB_BASE_URL}/deactivate`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify({
+      customer: {
+        account: {
+          number: accountNumber,
+        },
+      },
+    }),
+  });
+
+  const data = await response.json();
+
+  if (data.code !== "00") {
+    throw new Error(`Failed to deactivate virtual account: ${data.message}`);
+  }
+
+  return data;
+}
+
+export async function reactivateVirtualAccount(accountNumber: string): Promise<any> {
+  const token = await authenticate();
+
+  const response = await fetch(`${PSB_BASE_URL}/reactivate`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify({
+      customer: {
+        account: {
+          number: accountNumber,
+        },
+      },
+    }),
+  });
+
+  const data = await response.json();
+
+  if (data.code !== "00") {
+    throw new Error(`Failed to reactivate virtual account: ${data.message}`);
+  }
+
+  return data;
+}
