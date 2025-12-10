@@ -173,7 +173,7 @@ export class DbStorage implements IStorage {
 
   // Questions
   async getActiveQuestions(limit = 10) {
-    return db.select().from(questions).where(eq(questions.isActive, true)).limit(limit);
+    return db.select().from(questions).where(eq(questions.isActive, true)).orderBy(drizzleSql`RANDOM()`).limit(limit);
   }
 
   async getAllQuestions() {
