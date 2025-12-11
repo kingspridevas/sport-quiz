@@ -168,15 +168,31 @@ async function runTests() {
     const ref5 = generateReference();
     reallocatedRef = ref5;
     const request5 = {
+      transaction: { reference: ref5 },
+      order: {
+        amount: 2000,
+        currency: 'NGN',
+        description: 'UAT Test - Valid Reallocation',
+        country: 'NGA',
+        amounttype: 'EXACT'
+      },
+      customer: {
+        account: {
+          name: 'EBUNLOMO OLUMOWO',
+          number: createdAccountNumber || '1234567890',
+          expiry: { hours: 1 }
+        }
+      }
+    };
+    console.log('REQUEST:', JSON.stringify(request5, null, 2));
+    
+    const response5 = await reallocateVirtualAccount({
       accountNumber: createdAccountNumber || '1234567890',
       newReference: ref5,
       amount: 2000,
       customerName: 'EBUNLOMO OLUMOWO',
       description: 'UAT Test - Valid Reallocation'
-    };
-    console.log('REQUEST:', JSON.stringify(request5, null, 2));
-    
-    const response5 = await reallocateVirtualAccount(request5);
+    });
     console.log('RESPONSE:', JSON.stringify(response5, null, 2));
     results.push({ scenario: 'Reallocate - Valid', request: request5, response: response5, status: 'SUCCESS' });
   } catch (error: any) {
@@ -186,43 +202,85 @@ async function runTests() {
 
   // Test 6: Failure with incomplete account number
   console.log('\nTest 6: Account reallocation failure using incomplete account number');
+  const ref6 = generateReference();
   try {
-    const ref6 = generateReference();
     const request6 = {
-      accountNumber: '123', // Incomplete account number
+      transaction: { reference: ref6 },
+      order: {
+        amount: 2000,
+        currency: 'NGN',
+        description: 'UAT Test - Incomplete Account',
+        country: 'NGA',
+        amounttype: 'EXACT'
+      },
+      customer: {
+        account: {
+          name: 'EBUNLOMO OLUMOWO',
+          number: '123',
+          expiry: { hours: 1 }
+        }
+      }
+    };
+    console.log('REQUEST:', JSON.stringify(request6, null, 2));
+    
+    const response6 = await reallocateVirtualAccount({
+      accountNumber: '123',
       newReference: ref6,
       amount: 2000,
       customerName: 'EBUNLOMO OLUMOWO',
       description: 'UAT Test - Incomplete Account'
-    };
-    console.log('REQUEST:', JSON.stringify(request6, null, 2));
-    
-    const response6 = await reallocateVirtualAccount(request6);
+    });
     console.log('RESPONSE:', JSON.stringify(response6, null, 2));
     results.push({ scenario: 'Reallocate - Incomplete Account', request: request6, response: response6, status: 'SUCCESS' });
   } catch (error: any) {
     console.log('EXPECTED FAILURE:', error.message);
-    results.push({ scenario: 'Reallocate - Incomplete Account', request: {}, response: error.message, status: 'FAILURE' });
+    const request6 = {
+      transaction: { reference: ref6 },
+      order: { amount: 2000, currency: 'NGN', description: 'UAT Test - Incomplete Account', country: 'NGA', amounttype: 'EXACT' },
+      customer: { account: { name: 'EBUNLOMO OLUMOWO', number: '123', expiry: { hours: 1 } } }
+    };
+    results.push({ scenario: 'Reallocate - Incomplete Account', request: request6, response: error.message, status: 'FAILURE' });
   }
 
   // Test 7: Failure with duplicate reference
   console.log('\nTest 7: Account reallocation failure using duplicate reference');
   try {
     const request7 = {
-      accountNumber: createdAccountNumber || '1234567890',
-      newReference: reallocatedRef!, // Duplicate reference
-      amount: 2000,
-      customerName: 'EBUNLOMO OLUMOWO',
-      description: 'UAT Test - Duplicate Ref Reallocation'
+      transaction: { reference: reallocatedRef },
+      order: {
+        amount: 2000,
+        currency: 'NGN',
+        description: 'UAT Test - Duplicate Ref Reallocation',
+        country: 'NGA',
+        amounttype: 'EXACT'
+      },
+      customer: {
+        account: {
+          name: 'EBUNLOMO OLUMOWO',
+          number: createdAccountNumber || '1234567890',
+          expiry: { hours: 1 }
+        }
+      }
     };
     console.log('REQUEST:', JSON.stringify(request7, null, 2));
     
-    const response7 = await reallocateVirtualAccount(request7);
+    const response7 = await reallocateVirtualAccount({
+      accountNumber: createdAccountNumber || '1234567890',
+      newReference: reallocatedRef!,
+      amount: 2000,
+      customerName: 'EBUNLOMO OLUMOWO',
+      description: 'UAT Test - Duplicate Ref Reallocation'
+    });
     console.log('RESPONSE:', JSON.stringify(response7, null, 2));
     results.push({ scenario: 'Reallocate - Duplicate Reference', request: request7, response: response7, status: 'SUCCESS' });
   } catch (error: any) {
     console.log('EXPECTED FAILURE:', error.message);
-    results.push({ scenario: 'Reallocate - Duplicate Reference', request: {}, response: error.message, status: 'FAILURE' });
+    const request7 = {
+      transaction: { reference: reallocatedRef },
+      order: { amount: 2000, currency: 'NGN', description: 'UAT Test - Duplicate Ref Reallocation', country: 'NGA', amounttype: 'EXACT' },
+      customer: { account: { name: 'EBUNLOMO OLUMOWO', number: createdAccountNumber || '1234567890', expiry: { hours: 1 } } }
+    };
+    results.push({ scenario: 'Reallocate - Duplicate Reference', request: request7, response: error.message, status: 'FAILURE' });
   }
 
   // ========================================
@@ -233,7 +291,13 @@ async function runTests() {
   // Test 8: Successful deactivation
   console.log('Test 8: Account deactivation successful using valid account number');
   try {
-    const request8 = { accountNumber: createdAccountNumber || '1234567890' };
+    const request8 = {
+      customer: {
+        account: {
+          number: createdAccountNumber || '1234567890'
+        }
+      }
+    };
     console.log('REQUEST:', JSON.stringify(request8, null, 2));
     
     const response8 = await deactivateVirtualAccount(createdAccountNumber || '1234567890');
@@ -247,7 +311,13 @@ async function runTests() {
   // Test 9: Failure with invalid account number
   console.log('\nTest 9: Account deactivation failure using incomplete account number');
   try {
-    const request9 = { accountNumber: '999' };
+    const request9 = {
+      customer: {
+        account: {
+          number: '999'
+        }
+      }
+    };
     console.log('REQUEST:', JSON.stringify(request9, null, 2));
     
     const response9 = await deactivateVirtualAccount('999');
@@ -255,7 +325,8 @@ async function runTests() {
     results.push({ scenario: 'Deactivate - Invalid Account', request: request9, response: response9, status: 'SUCCESS' });
   } catch (error: any) {
     console.log('EXPECTED FAILURE:', error.message);
-    results.push({ scenario: 'Deactivate - Invalid Account', request: {}, response: error.message, status: 'FAILURE' });
+    const failedRequest9 = { customer: { account: { number: '999' } } };
+    results.push({ scenario: 'Deactivate - Invalid Account', request: failedRequest9, response: error.message, status: 'FAILURE' });
   }
 
   // ========================================
@@ -266,7 +337,13 @@ async function runTests() {
   // Test 10: Successful reactivation
   console.log('Test 10: Account reactivation successful using valid account number');
   try {
-    const request10 = { accountNumber: createdAccountNumber || '1234567890' };
+    const request10 = {
+      customer: {
+        account: {
+          number: createdAccountNumber || '1234567890'
+        }
+      }
+    };
     console.log('REQUEST:', JSON.stringify(request10, null, 2));
     
     const response10 = await reactivateVirtualAccount(createdAccountNumber || '1234567890');
@@ -280,7 +357,13 @@ async function runTests() {
   // Test 11: Failure with invalid account number
   console.log('\nTest 11: Account reactivation failure using invalid account number');
   try {
-    const request11 = { accountNumber: 'INVALID123' };
+    const request11 = {
+      customer: {
+        account: {
+          number: 'INVALID123'
+        }
+      }
+    };
     console.log('REQUEST:', JSON.stringify(request11, null, 2));
     
     const response11 = await reactivateVirtualAccount('INVALID123');
@@ -288,7 +371,8 @@ async function runTests() {
     results.push({ scenario: 'Reactivate - Invalid Account', request: request11, response: response11, status: 'SUCCESS' });
   } catch (error: any) {
     console.log('EXPECTED FAILURE:', error.message);
-    results.push({ scenario: 'Reactivate - Invalid Account', request: {}, response: error.message, status: 'FAILURE' });
+    const failedRequest11 = { customer: { account: { number: 'INVALID123' } } };
+    results.push({ scenario: 'Reactivate - Invalid Account', request: failedRequest11, response: error.message, status: 'FAILURE' });
   }
 
   // ========================================
@@ -299,12 +383,18 @@ async function runTests() {
   // Test 12: Successful payment confirmation
   console.log('Test 12: Payment confirmation using valid reference');
   try {
-    const request12 = { reference: successfulReference || 'TEST_REF' };
+    const request12 = {
+      method: 'GET',
+      endpoint: `${PSB_BASE_URL}/status/${successfulReference || 'TEST_REF'}`,
+      headers: {
+        'Authorization': 'Bearer {token}'
+      }
+    };
     console.log('REQUEST:', JSON.stringify(request12, null, 2));
     
     const response12 = await confirmPayment(successfulReference || 'TEST_REF');
     console.log('RESPONSE:', JSON.stringify(response12, null, 2));
-    results.push({ scenario: 'Confirm Payment - Valid Reference', request: request12, response: response12, status: response12.code === '00' ? 'SUCCESS' : 'FAILURE' });
+    results.push({ scenario: 'Confirm Payment - Valid Reference', request: request12, response: response12, status: response12.code === '00' ? 'SUCCESS' : (response12.parseError ? 'ENDPOINT_ERROR' : 'FAILURE') });
   } catch (error: any) {
     console.log('ERROR:', error.message);
     results.push({ scenario: 'Confirm Payment - Valid Reference', request: {}, response: error.message, status: 'ERROR' });
@@ -313,12 +403,18 @@ async function runTests() {
   // Test 13: Failed payment confirmation with invalid reference
   console.log('\nTest 13: Payment confirmation failure using invalid reference');
   try {
-    const request13 = { reference: 'INVALID_REFERENCE_12345' };
+    const request13 = {
+      method: 'GET',
+      endpoint: `${PSB_BASE_URL}/status/INVALID_REFERENCE_12345`,
+      headers: {
+        'Authorization': 'Bearer {token}'
+      }
+    };
     console.log('REQUEST:', JSON.stringify(request13, null, 2));
     
     const response13 = await confirmPayment('INVALID_REFERENCE_12345');
     console.log('RESPONSE:', JSON.stringify(response13, null, 2));
-    results.push({ scenario: 'Confirm Payment - Invalid Reference', request: request13, response: response13, status: response13.code === '00' ? 'SUCCESS' : 'FAILURE' });
+    results.push({ scenario: 'Confirm Payment - Invalid Reference', request: request13, response: response13, status: response13.code === '00' ? 'SUCCESS' : (response13.parseError ? 'ENDPOINT_ERROR' : 'FAILURE') });
   } catch (error: any) {
     console.log('ERROR:', error.message);
     results.push({ scenario: 'Confirm Payment - Invalid Reference', request: {}, response: error.message, status: 'ERROR' });

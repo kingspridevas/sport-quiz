@@ -134,7 +134,12 @@ export async function confirmPayment(reference: string): Promise<any> {
     },
   });
 
-  return response.json();
+  const text = await response.text();
+  try {
+    return JSON.parse(text);
+  } catch {
+    return { rawResponse: text, parseError: true };
+  }
 }
 
 interface ReallocateRequest {
