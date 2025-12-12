@@ -477,6 +477,19 @@ export function registerRoutes(app: Express) {
         }
       }
 
+      // Handle Free Spin (retry) prize - award 5 points
+      if (selectedPrize.prizeType === 'retry') {
+        const FREE_SPIN_POINTS = 5;
+        const currentPoints = await storage.getUserPoints(userId);
+        if (currentPoints) {
+          await storage.updateUserPoints(userId, {
+            points: currentPoints.points + FREE_SPIN_POINTS,
+            totalEarned: currentPoints.totalEarned + FREE_SPIN_POINTS
+          });
+          await storage.updateWheelSpin(spin.id, { status: "processed" });
+        }
+      }
+
       res.json({ spin, prize: selectedPrize });
     } catch (error: any) {
       res.status(500).json({ error: error.message });
