@@ -698,11 +698,18 @@ export function registerRoutes(app: Express) {
       const wheelSpins = await storage.getUserWheelSpins(req.params.id);
       const paymentTransactions = await storage.getUserPaymentTransactions(req.params.id);
       
+      // Add passed field to quiz sessions based on correctAnswers >= 3
+      const quizSessionsWithPassed = quizSessions.map(session => ({
+        ...session,
+        passed: session.correctAnswers >= 3,
+        createdAt: session.startedAt
+      }));
+      
       res.json({
         profile: safeProfile,
         wallet,
         points,
-        quizSessions,
+        quizSessions: quizSessionsWithPassed,
         wheelSpins,
         paymentTransactions
       });
@@ -801,7 +808,13 @@ export function registerRoutes(app: Express) {
   app.get("/api/admin/quiz-sessions", async (req, res) => {
     try {
       const sessions = await storage.getAllQuizSessions();
-      res.json(sessions);
+      // Add passed field based on correctAnswers >= 3
+      const sessionsWithPassed = sessions.map(session => ({
+        ...session,
+        passed: session.correctAnswers >= 3,
+        createdAt: session.startedAt
+      }));
+      res.json(sessionsWithPassed);
     } catch (error: any) {
       res.status(500).json({ error: error.message });
     }
@@ -810,7 +823,13 @@ export function registerRoutes(app: Express) {
   app.get("/api/admin/quiz-sessions/:userId", async (req, res) => {
     try {
       const sessions = await storage.getUserQuizSessions(req.params.userId);
-      res.json(sessions);
+      // Add passed field based on correctAnswers >= 3
+      const sessionsWithPassed = sessions.map(session => ({
+        ...session,
+        passed: session.correctAnswers >= 3,
+        createdAt: session.startedAt
+      }));
+      res.json(sessionsWithPassed);
     } catch (error: any) {
       res.status(500).json({ error: error.message });
     }
