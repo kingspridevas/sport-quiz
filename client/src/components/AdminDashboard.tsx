@@ -922,6 +922,18 @@ export function AdminDashboard() {
               Prizes ({prizes.length})
             </button>
             <button
+              onClick={() => setActiveTab('winners')}
+              className={`px-6 py-3 font-semibold transition-colors flex items-center gap-2 whitespace-nowrap ${
+                activeTab === 'winners'
+                  ? 'border-b-2 border-blue-600 text-blue-600'
+                  : 'text-gray-600 hover:text-gray-900'
+              }`}
+              data-testid="tab-winners"
+            >
+              <Trophy size={18} />
+              Winners
+            </button>
+            <button
               onClick={() => setActiveTab('users')}
               className={`px-6 py-3 font-semibold transition-colors flex items-center gap-2 whitespace-nowrap ${
                 activeTab === 'users'
@@ -968,18 +980,6 @@ export function AdminDashboard() {
             >
               <Activity size={18} />
               Quiz Activity
-            </button>
-            <button
-              onClick={() => setActiveTab('winners')}
-              className={`px-6 py-3 font-semibold transition-colors flex items-center gap-2 whitespace-nowrap ${
-                activeTab === 'winners'
-                  ? 'border-b-2 border-blue-600 text-blue-600'
-                  : 'text-gray-600 hover:text-gray-900'
-              }`}
-              data-testid="tab-winners"
-            >
-              <Trophy size={18} />
-              Winners
             </button>
           </div>
         </div>
