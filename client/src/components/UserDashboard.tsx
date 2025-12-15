@@ -97,7 +97,7 @@ export function UserDashboard() {
         
         const totalWinnings = spins
           .filter((s: WheelSpin) => s.prizeValue)
-          .reduce((sum: number, s: WheelSpin) => sum + (s.prizeValue || 0), 0);
+          .reduce((sum: number, s: WheelSpin) => sum + (Number(s.prizeValue) || 0), 0);
         setStats((prev) => ({
           ...prev,
           totalSpins: spins.length,
