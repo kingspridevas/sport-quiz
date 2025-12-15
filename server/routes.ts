@@ -3,68 +3,41 @@ import bcrypt from "bcryptjs";
 import { storage } from "./storage.js";
 import { authSignupSchema, authLoginSchema, insertQuestionSchema, insertQuizSessionSchema, insertQuizAnswerSchema } from "../shared/schema.js";
 import { createVirtualAccount, reallocateVirtualAccount, deactivateVirtualAccount, reactivateVirtualAccount } from "./psb-service.js";
-import type { Winner, Profile, PrizeConfig } from "../shared/schema.js";
+import { getUncachableSendGridClient } from "./sendgrid.js";
+import type { Winner } from "../shared/schema.js";
 
 const ADMIN_NOTIFICATION_EMAIL = "wazosportsng@gmail.com";
 
-async function sendWinnerNotificationEmail(winner: Winner, profile: Profile, prize: PrizeConfig) {
+async function sendWinnerNotificationEmail(winner: Winner) {
   try {
-    const SENDGRID_API_KEY = process.env.SENDGRID_API_KEY;
-    
-    if (!SENDGRID_API_KEY) {
-      console.log("SendGrid API key not configured - email notification skipped");
-      console.log("Winner notification:", {
-        prizeName: winner.prizeName,
-        prizeValue: winner.prizeValue,
-        userEmail: winner.userEmail,
-        userFullName: winner.userFullName
-      });
-      return;
-    }
+    const { client, fromEmail } = await getUncachableSendGridClient();
     
     const emailContent = {
-      personalizations: [{
-        to: [{ email: ADMIN_NOTIFICATION_EMAIL }],
-        subject: `New Winner Alert: ${winner.prizeName}`
-      }],
-      from: { email: "noreply@wazosports.ng", name: "Wazo Sports" },
-      content: [{
-        type: "text/html",
-        value: `
-          <h2>New Prize Winner</h2>
-          <p><strong>Prize:</strong> ${winner.prizeName}</p>
-          <p><strong>Prize Type:</strong> ${winner.prizeType}</p>
-          <p><strong>Prize Value:</strong> ${winner.prizeValue ? `₦${winner.prizeValue}` : 'N/A'}</p>
-          <hr />
-          <h3>Winner Details</h3>
-          <p><strong>Name:</strong> ${winner.userFullName || 'Not provided'}</p>
-          <p><strong>Email:</strong> ${winner.userEmail}</p>
-          <p><strong>Phone:</strong> ${winner.userPhone || 'Not provided'}</p>
-          <h4>Bank Details</h4>
-          <p><strong>Bank:</strong> ${winner.userBankName || 'Not provided'}</p>
-          <p><strong>Account Name:</strong> ${winner.userBankAccountName || 'Not provided'}</p>
-          <p><strong>Account Number:</strong> ${winner.userBankAccountNumber || 'Not provided'}</p>
-          <hr />
-          <p><small>Won at: ${new Date().toLocaleString()}</small></p>
-        `
-      }]
+      to: ADMIN_NOTIFICATION_EMAIL,
+      from: fromEmail,
+      subject: `New Winner Alert: ${winner.prizeName}`,
+      html: `
+        <h2>New Prize Winner</h2>
+        <p><strong>Prize:</strong> ${winner.prizeName}</p>
+        <p><strong>Prize Type:</strong> ${winner.prizeType}</p>
+        <p><strong>Prize Value:</strong> ${winner.prizeValue ? `₦${winner.prizeValue}` : 'N/A'}</p>
+        <hr />
+        <h3>Winner Details</h3>
+        <p><strong>Name:</strong> ${winner.userFullName || 'Not provided'}</p>
+        <p><strong>Email:</strong> ${winner.userEmail}</p>
+        <p><strong>Phone:</strong> ${winner.userPhone || 'Not provided'}</p>
+        <h4>Bank Details</h4>
+        <p><strong>Bank:</strong> ${winner.userBankName || 'Not provided'}</p>
+        <p><strong>Account Name:</strong> ${winner.userBankAccountName || 'Not provided'}</p>
+        <p><strong>Account Number:</strong> ${winner.userBankAccountNumber || 'Not provided'}</p>
+        <hr />
+        <p><small>Won at: ${new Date().toLocaleString()}</small></p>
+      `
     };
     
-    const response = await fetch("https://api.sendgrid.com/v3/mail/send", {
-      method: "POST",
-      headers: {
-        "Authorization": `Bearer ${SENDGRID_API_KEY}`,
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify(emailContent)
-    });
-    
-    if (response.ok) {
-      await storage.updateWinner(winner.id, { emailSent: true, emailSentAt: new Date() });
-      console.log(`Winner notification email sent to ${ADMIN_NOTIFICATION_EMAIL}`);
-    } else {
-      console.error("Failed to send winner email:", await response.text());
-    }
+    await client.send(emailContent);
+    await storage.updateWinner(winner.id, { emailSent: true, emailSentAt: new Date() });
+    console.log(`Winner notification email sent to ${ADMIN_NOTIFICATION_EMAIL}`);
   } catch (error) {
     console.error("Error sending winner notification email:", error);
   }
@@ -549,7 +522,7 @@ export function registerRoutes(app: Express) {
           });
           
           // Send email notification to admin
-          await sendWinnerNotificationEmail(winner, profile, selectedPrize);
+          await sendWinnerNotificationEmail(winner);
           
           await storage.updateWheelSpin(spin.id, { status: "pending" });
         }
