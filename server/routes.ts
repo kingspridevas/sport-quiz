@@ -905,8 +905,27 @@ export function registerRoutes(app: Express) {
     }
   });
 
+  // Public Winners Display (for users to see other winners)
+  app.get("/api/winners/public", async (_req, res) => {
+    try {
+      const allWinners = await storage.getAllWinners();
+      // Return limited info for public display - exclude sensitive bank details
+      const publicWinners = allWinners.map(w => ({
+        id: w.id,
+        prizeName: w.prizeName,
+        prizeType: w.prizeType,
+        prizeValue: w.prizeValue,
+        userFullName: w.userFullName ? w.userFullName.split(' ')[0] + ' ***' : 'Anonymous',
+        createdAt: w.createdAt
+      }));
+      res.json(publicWinners);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
   // Winners Management
-  app.get("/api/admin/winners", async (req, res) => {
+  app.get("/api/admin/winners", async (_req, res) => {
     try {
       const allWinners = await storage.getAllWinners();
       res.json(allWinners);

@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { useAuth } from '../contexts/AuthContext';
-import { Plus, Edit2, Trash2, Save, X, Settings, LogOut, Upload, Download, HelpCircle, Gift, FileSpreadsheet, Users, Wallet, CreditCard, Activity, Eye, ChevronLeft, Calculator } from 'lucide-react';
+import { Plus, Edit2, Trash2, Save, X, Settings, LogOut, Upload, Download, HelpCircle, Gift, FileSpreadsheet, Users, Wallet, CreditCard, Activity, Eye, ChevronLeft, Calculator, Trophy, Check, DollarSign } from 'lucide-react';
 
 interface Question {
   id: string;
@@ -89,6 +89,26 @@ interface QuizSessionData {
   createdAt: string;
 }
 
+interface WinnerData {
+  id: string;
+  userId: string;
+  spinId: string;
+  prizeType: string;
+  prizeName: string;
+  prizeValue: string | null;
+  userEmail: string;
+  userFullName: string | null;
+  userPhone: string | null;
+  userBankName: string | null;
+  userBankAccountName: string | null;
+  userBankAccountNumber: string | null;
+  status: string;
+  emailSent: boolean;
+  emailSentAt: string | null;
+  processedAt: string | null;
+  createdAt: string;
+}
+
 interface UserDetail {
   profile: UserProfile;
   wallet: WalletData | null;
@@ -100,7 +120,7 @@ interface UserDetail {
 
 export function AdminDashboard() {
   const { profile, signOut } = useAuth();
-  const [activeTab, setActiveTab] = useState<'questions' | 'prizes' | 'users' | 'wallets' | 'payments' | 'activity' | 'bulk'>('questions');
+  const [activeTab, setActiveTab] = useState<'questions' | 'prizes' | 'users' | 'wallets' | 'payments' | 'activity' | 'bulk' | 'winners'>('questions');
   const [questions, setQuestions] = useState<Question[]>([]);
   const [prizes, setPrizes] = useState<Prize[]>([]);
   const [stats, setStats] = useState<UserStats>({ totalUsers: 0, totalQuizzes: 0, totalWalletBalance: 0, totalPayments: 0 });
@@ -117,6 +137,8 @@ export function AdminDashboard() {
   const [wallets, setWallets] = useState<WalletData[]>([]);
   const [payments, setPayments] = useState<PaymentData[]>([]);
   const [quizSessions, setQuizSessions] = useState<QuizSessionData[]>([]);
+  const [winners, setWinners] = useState<WinnerData[]>([]);
+  const [processingWinner, setProcessingWinner] = useState<string | null>(null);
   const [selectedUser, setSelectedUser] = useState<UserDetail | null>(null);
   const [loadingUser, setLoadingUser] = useState(false);
   const [editingUser, setEditingUser] = useState(false);
@@ -167,6 +189,7 @@ export function AdminDashboard() {
     loadWallets();
     loadPayments();
     loadQuizSessions();
+    loadWinners();
   }, []);
 
   const loadQuestions = async () => {
@@ -322,6 +345,50 @@ export function AdminDashboard() {
       }
     } catch (error) {
       console.error('Error loading quiz sessions:', error);
+    }
+  };
+
+  const loadWinners = async () => {
+    try {
+      const response = await fetch('/api/admin/winners');
+      if (response.ok) {
+        const data = await response.json();
+        setWinners(data);
+      }
+    } catch (error) {
+      console.error('Error loading winners:', error);
+    }
+  };
+
+  const handleProcessWinner = async (winnerId: string) => {
+    setProcessingWinner(winnerId);
+    try {
+      const response = await fetch(`/api/admin/winners/${winnerId}/process`, {
+        method: 'POST'
+      });
+      if (response.ok) {
+        await loadWinners();
+      }
+    } catch (error) {
+      console.error('Error processing winner:', error);
+    } finally {
+      setProcessingWinner(null);
+    }
+  };
+
+  const handlePayWinner = async (winnerId: string) => {
+    setProcessingWinner(winnerId);
+    try {
+      const response = await fetch(`/api/admin/winners/${winnerId}/pay`, {
+        method: 'POST'
+      });
+      if (response.ok) {
+        await loadWinners();
+      }
+    } catch (error) {
+      console.error('Error marking winner as paid:', error);
+    } finally {
+      setProcessingWinner(null);
     }
   };
 
@@ -901,6 +968,18 @@ export function AdminDashboard() {
             >
               <Activity size={18} />
               Quiz Activity
+            </button>
+            <button
+              onClick={() => setActiveTab('winners')}
+              className={`px-6 py-3 font-semibold transition-colors flex items-center gap-2 whitespace-nowrap ${
+                activeTab === 'winners'
+                  ? 'border-b-2 border-blue-600 text-blue-600'
+                  : 'text-gray-600 hover:text-gray-900'
+              }`}
+              data-testid="tab-winners"
+            >
+              <Trophy size={18} />
+              Winners
             </button>
           </div>
         </div>
@@ -2104,6 +2183,121 @@ OR JSON format:
                               <Eye size={16} />
                               View User
                             </button>
+                          </td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {activeTab === 'winners' && (
+          <div className="bg-white rounded-xl shadow-sm overflow-hidden">
+            <div className="p-6">
+              <div className="flex justify-between items-center mb-6">
+                <h2 className="text-xl font-bold flex items-center gap-2">
+                  <Trophy size={24} className="text-yellow-500" />
+                  Prize Winners
+                </h2>
+                <span className="text-sm text-gray-500">{winners.length} total winners</span>
+              </div>
+              <div className="overflow-x-auto">
+                <table className="w-full">
+                  <thead className="bg-gray-50">
+                    <tr>
+                      <th className="text-left py-3 px-4">Date</th>
+                      <th className="text-left py-3 px-4">Winner</th>
+                      <th className="text-left py-3 px-4">Prize</th>
+                      <th className="text-left py-3 px-4">Value</th>
+                      <th className="text-left py-3 px-4">Bank Details</th>
+                      <th className="text-left py-3 px-4">Status</th>
+                      <th className="text-left py-3 px-4">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {winners.length === 0 ? (
+                      <tr>
+                        <td colSpan={7} className="py-8 text-center text-gray-500">No winners yet</td>
+                      </tr>
+                    ) : (
+                      winners.map((winner) => (
+                        <tr key={winner.id} className="border-b hover:bg-gray-50">
+                          <td className="py-3 px-4">{new Date(winner.createdAt).toLocaleDateString()}</td>
+                          <td className="py-3 px-4">
+                            <div className="flex flex-col">
+                              <span className="font-medium">{winner.userFullName || 'Unknown'}</span>
+                              <span className="text-sm text-gray-500">{winner.userEmail}</span>
+                              <span className="text-xs text-gray-400">{winner.userPhone || 'No phone'}</span>
+                            </div>
+                          </td>
+                          <td className="py-3 px-4">
+                            <div className="flex flex-col">
+                              <span className="font-medium">{winner.prizeName}</span>
+                              <span className={`text-xs px-2 py-0.5 rounded inline-block w-fit ${
+                                winner.prizeType === 'cash' ? 'bg-green-100 text-green-700' : 'bg-blue-100 text-blue-700'
+                              }`}>
+                                {winner.prizeType}
+                              </span>
+                            </div>
+                          </td>
+                          <td className="py-3 px-4 font-medium">
+                            {winner.prizeValue ? `₦${parseFloat(winner.prizeValue).toLocaleString()}` : '-'}
+                          </td>
+                          <td className="py-3 px-4">
+                            <div className="flex flex-col text-sm">
+                              <span>{winner.userBankName || 'No bank'}</span>
+                              <span className="text-gray-500">{winner.userBankAccountName || '-'}</span>
+                              <span className="font-mono text-xs">{winner.userBankAccountNumber || '-'}</span>
+                            </div>
+                          </td>
+                          <td className="py-3 px-4">
+                            <span className={`px-2 py-1 rounded text-xs ${
+                              winner.status === 'paid' ? 'bg-green-100 text-green-700' :
+                              winner.status === 'processed' ? 'bg-blue-100 text-blue-700' :
+                              'bg-yellow-100 text-yellow-700'
+                            }`}>
+                              {winner.status}
+                            </span>
+                            {winner.emailSent && (
+                              <span className="ml-2 text-xs text-gray-500" title="Email sent">
+                                <Check size={12} className="inline" />
+                              </span>
+                            )}
+                          </td>
+                          <td className="py-3 px-4">
+                            <div className="flex gap-2">
+                              {winner.status === 'pending' && (
+                                <button
+                                  onClick={() => handleProcessWinner(winner.id)}
+                                  disabled={processingWinner === winner.id}
+                                  className="flex items-center gap-1 px-2 py-1 bg-blue-600 text-white rounded text-xs hover:bg-blue-700 disabled:opacity-50"
+                                  data-testid={`button-process-winner-${winner.id}`}
+                                >
+                                  <Check size={12} />
+                                  Process
+                                </button>
+                              )}
+                              {winner.status === 'processed' && (
+                                <button
+                                  onClick={() => handlePayWinner(winner.id)}
+                                  disabled={processingWinner === winner.id}
+                                  className="flex items-center gap-1 px-2 py-1 bg-green-600 text-white rounded text-xs hover:bg-green-700 disabled:opacity-50"
+                                  data-testid={`button-pay-winner-${winner.id}`}
+                                >
+                                  <DollarSign size={12} />
+                                  Mark Paid
+                                </button>
+                              )}
+                              {winner.status === 'paid' && (
+                                <span className="text-green-600 text-xs flex items-center gap-1">
+                                  <Check size={12} />
+                                  Completed
+                                </span>
+                              )}
+                            </div>
                           </td>
                         </tr>
                       ))
