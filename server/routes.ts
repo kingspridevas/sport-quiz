@@ -3,6 +3,72 @@ import bcrypt from "bcryptjs";
 import { storage } from "./storage.js";
 import { authSignupSchema, authLoginSchema, insertQuestionSchema, insertQuizSessionSchema, insertQuizAnswerSchema } from "../shared/schema.js";
 import { createVirtualAccount, reallocateVirtualAccount, deactivateVirtualAccount, reactivateVirtualAccount } from "./psb-service.js";
+import type { Winner, Profile, PrizeConfig } from "../shared/schema.js";
+
+const ADMIN_NOTIFICATION_EMAIL = "wazosportsng@gmail.com";
+
+async function sendWinnerNotificationEmail(winner: Winner, profile: Profile, prize: PrizeConfig) {
+  try {
+    const SENDGRID_API_KEY = process.env.SENDGRID_API_KEY;
+    
+    if (!SENDGRID_API_KEY) {
+      console.log("SendGrid API key not configured - email notification skipped");
+      console.log("Winner notification:", {
+        prizeName: winner.prizeName,
+        prizeValue: winner.prizeValue,
+        userEmail: winner.userEmail,
+        userFullName: winner.userFullName
+      });
+      return;
+    }
+    
+    const emailContent = {
+      personalizations: [{
+        to: [{ email: ADMIN_NOTIFICATION_EMAIL }],
+        subject: `New Winner Alert: ${winner.prizeName}`
+      }],
+      from: { email: "noreply@wazosports.ng", name: "Wazo Sports" },
+      content: [{
+        type: "text/html",
+        value: `
+          <h2>New Prize Winner</h2>
+          <p><strong>Prize:</strong> ${winner.prizeName}</p>
+          <p><strong>Prize Type:</strong> ${winner.prizeType}</p>
+          <p><strong>Prize Value:</strong> ${winner.prizeValue ? `₦${winner.prizeValue}` : 'N/A'}</p>
+          <hr />
+          <h3>Winner Details</h3>
+          <p><strong>Name:</strong> ${winner.userFullName || 'Not provided'}</p>
+          <p><strong>Email:</strong> ${winner.userEmail}</p>
+          <p><strong>Phone:</strong> ${winner.userPhone || 'Not provided'}</p>
+          <h4>Bank Details</h4>
+          <p><strong>Bank:</strong> ${winner.userBankName || 'Not provided'}</p>
+          <p><strong>Account Name:</strong> ${winner.userBankAccountName || 'Not provided'}</p>
+          <p><strong>Account Number:</strong> ${winner.userBankAccountNumber || 'Not provided'}</p>
+          <hr />
+          <p><small>Won at: ${new Date().toLocaleString()}</small></p>
+        `
+      }]
+    };
+    
+    const response = await fetch("https://api.sendgrid.com/v3/mail/send", {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${SENDGRID_API_KEY}`,
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify(emailContent)
+    });
+    
+    if (response.ok) {
+      await storage.updateWinner(winner.id, { emailSent: true, emailSentAt: new Date() });
+      console.log(`Winner notification email sent to ${ADMIN_NOTIFICATION_EMAIL}`);
+    } else {
+      console.error("Failed to send winner email:", await response.text());
+    }
+  } catch (error) {
+    console.error("Error sending winner notification email:", error);
+  }
+}
 
 export function registerRoutes(app: Express) {
   app.post("/api/auth/signup", async (req, res) => {
@@ -460,20 +526,32 @@ export function registerRoutes(app: Express) {
         }
       }
 
-      // Handle prize type
-      if (selectedPrize.prizeType === 'cash' && selectedPrize.prizeValue) {
-        const wallet = await storage.getWallet(userId);
-        if (wallet) {
-          const newBalance = parseFloat(wallet.balance) + parseFloat(selectedPrize.prizeValue.toString());
-          await storage.updateWallet(wallet.id, { balance: newBalance.toString() });
-          await storage.createWalletTransaction({
-            walletId: wallet.id,
-            type: "prize",
-            amount: selectedPrize.prizeValue.toString(),
-            description: `Prize: ${selectedPrize.prizeName}`,
-            reference: spin.id
+      // Handle prize type - Record winners for cash and item prizes
+      if (selectedPrize.prizeType === 'cash' || selectedPrize.prizeType === 'item') {
+        // Get user profile for winner record
+        const profile = await storage.getProfile(userId);
+        if (profile) {
+          // Create winner record
+          const winner = await storage.createWinner({
+            userId,
+            spinId: spin.id,
+            prizeType: selectedPrize.prizeType,
+            prizeName: selectedPrize.prizeName,
+            prizeValue: selectedPrize.prizeValue || null,
+            userEmail: profile.email,
+            userFullName: profile.fullName || null,
+            userPhone: profile.phoneNumber || null,
+            userBankName: profile.bankName || null,
+            userBankAccountName: profile.bankAccountName || null,
+            userBankAccountNumber: profile.bankAccountNumber || null,
+            status: "pending",
+            emailSent: false
           });
-          await storage.updateWheelSpin(spin.id, { status: "processed" });
+          
+          // Send email notification to admin
+          await sendWinnerNotificationEmail(winner, profile, selectedPrize);
+          
+          await storage.updateWheelSpin(spin.id, { status: "pending" });
         }
       }
 
@@ -488,6 +566,11 @@ export function registerRoutes(app: Express) {
           });
           await storage.updateWheelSpin(spin.id, { status: "processed" });
         }
+      }
+      
+      // Handle thank_you prize - just mark as processed
+      if (selectedPrize.prizeType === 'thank_you') {
+        await storage.updateWheelSpin(spin.id, { status: "processed" });
       }
 
       res.json({ spin, prize: selectedPrize });
@@ -843,6 +926,83 @@ export function registerRoutes(app: Express) {
         return res.status(404).json({ error: "User points not found" });
       }
       const updated = await storage.updateUserPoints(req.params.userId, { points });
+      res.json(updated);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Winners Management
+  app.get("/api/admin/winners", async (req, res) => {
+    try {
+      const allWinners = await storage.getAllWinners();
+      res.json(allWinners);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.get("/api/admin/winners/:id", async (req, res) => {
+    try {
+      const winner = await storage.getWinner(req.params.id);
+      if (!winner) {
+        return res.status(404).json({ error: "Winner not found" });
+      }
+      res.json(winner);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.patch("/api/admin/winners/:id", async (req, res) => {
+    try {
+      const updates = req.body;
+      const winner = await storage.updateWinner(req.params.id, updates);
+      if (!winner) {
+        return res.status(404).json({ error: "Winner not found" });
+      }
+      res.json(winner);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.post("/api/admin/winners/:id/process", async (req, res) => {
+    try {
+      const winner = await storage.getWinner(req.params.id);
+      if (!winner) {
+        return res.status(404).json({ error: "Winner not found" });
+      }
+      
+      const updated = await storage.updateWinner(req.params.id, {
+        status: "processed",
+        processedAt: new Date()
+      });
+      
+      // Mark the corresponding wheel spin as processed
+      await storage.updateWheelSpin(winner.spinId, { status: "processed" });
+      
+      res.json(updated);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.post("/api/admin/winners/:id/pay", async (req, res) => {
+    try {
+      const winner = await storage.getWinner(req.params.id);
+      if (!winner) {
+        return res.status(404).json({ error: "Winner not found" });
+      }
+      
+      const updated = await storage.updateWinner(req.params.id, {
+        status: "paid",
+        processedAt: winner.processedAt || new Date()
+      });
+      
+      // Mark the corresponding wheel spin as claimed
+      await storage.updateWheelSpin(winner.spinId, { status: "claimed" });
+      
       res.json(updated);
     } catch (error: any) {
       res.status(500).json({ error: error.message });

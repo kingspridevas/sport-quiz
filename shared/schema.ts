@@ -231,3 +231,30 @@ export const insertPaymentTransactionSchema = createInsertSchema(paymentTransact
 });
 export type InsertPaymentTransaction = z.infer<typeof insertPaymentTransactionSchema>;
 export type PaymentTransaction = typeof paymentTransactions.$inferSelect;
+
+export const winners = pgTable("winners", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  userId: uuid("user_id").notNull().references(() => profiles.id, { onDelete: "cascade" }),
+  spinId: uuid("spin_id").notNull().references(() => wheelSpins.id, { onDelete: "cascade" }),
+  prizeType: text("prize_type").notNull(), // 'cash' or 'item'
+  prizeName: text("prize_name").notNull(),
+  prizeValue: numeric("prize_value"),
+  userEmail: text("user_email").notNull(),
+  userFullName: text("user_full_name"),
+  userPhone: text("user_phone"),
+  userBankName: text("user_bank_name"),
+  userBankAccountName: text("user_bank_account_name"),
+  userBankAccountNumber: text("user_bank_account_number"),
+  status: text("status").default("pending").notNull(), // 'pending', 'processed', 'paid'
+  emailSent: boolean("email_sent").default(false).notNull(),
+  emailSentAt: timestamp("email_sent_at"),
+  processedAt: timestamp("processed_at"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export const insertWinnerSchema = createInsertSchema(winners).omit({
+  id: true,
+  createdAt: true,
+});
+export type InsertWinner = z.infer<typeof insertWinnerSchema>;
+export type Winner = typeof winners.$inferSelect;

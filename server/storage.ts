@@ -10,6 +10,7 @@ import {  profiles,
   wheelSpins,
   dailyWinnerLimits,
   paymentTransactions,
+  winners,
   type Profile,
   type Wallet,
   type WalletTransaction,
@@ -21,6 +22,7 @@ import {  profiles,
   type WheelSpin,
   type DailyWinnerLimit,
   type PaymentTransaction,
+  type Winner,
   type InsertProfile,
   type InsertWallet,
   type InsertWalletTransaction,
@@ -32,6 +34,7 @@ import {  profiles,
   type InsertWheelSpin,
   type InsertDailyWinnerLimit,
   type InsertPaymentTransaction,
+  type InsertWinner,
 } from "../shared/schema.js";
 import { eq, and, sql as drizzleSql, desc } from "drizzle-orm";
 
@@ -106,6 +109,12 @@ export interface IStorage {
   // Admin Stats
   getAllQuizSessions(): Promise<QuizSession[]>;
   getAdminStats(): Promise<{totalUsers: number, totalQuizzes: number, totalWalletBalance: number, totalPayments: number}>;
+  
+  // Winners
+  createWinner(winner: InsertWinner): Promise<Winner>;
+  getAllWinners(): Promise<Winner[]>;
+  getWinner(id: string): Promise<Winner | undefined>;
+  updateWinner(id: string, updates: Partial<InsertWinner>): Promise<Winner | undefined>;
 }
 
 export class DbStorage implements IStorage {
@@ -422,6 +431,30 @@ export class DbStorage implements IStorage {
       .update(paymentTransactions)
       .set({ ...updates, updatedAt: new Date() })
       .where(eq(paymentTransactions.id, id))
+      .returning();
+    return result[0];
+  }
+
+  // Winners
+  async createWinner(winner: InsertWinner) {
+    const result = await db.insert(winners).values(winner).returning();
+    return result[0];
+  }
+
+  async getAllWinners() {
+    return db.select().from(winners).orderBy(desc(winners.createdAt));
+  }
+
+  async getWinner(id: string) {
+    const result = await db.select().from(winners).where(eq(winners.id, id));
+    return result[0];
+  }
+
+  async updateWinner(id: string, updates: Partial<InsertWinner>) {
+    const result = await db
+      .update(winners)
+      .set(updates)
+      .where(eq(winners.id, id))
       .returning();
     return result[0];
   }
