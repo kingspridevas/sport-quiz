@@ -1,11 +1,18 @@
 import { useState, useEffect } from 'react';
 import { useAuth } from '../contexts/AuthContext';
-import { CheckCircle, XCircle, Trophy, Clock } from 'lucide-react';
+import { CheckCircle, XCircle, Trophy, Clock, Globe } from 'lucide-react';
 
 const QUIZ_COST = 100;
 const QUESTIONS_PER_SESSION = 5;
 const MIN_CORRECT_ANSWERS = 3;
 const TIME_PER_QUESTION = 30;
+
+const LANGUAGES = [
+  { value: 'english', label: 'English', flag: 'EN' },
+  { value: 'yoruba', label: 'Yoruba', flag: 'YO' },
+  { value: 'hausa', label: 'Hausa', flag: 'HA' },
+  { value: 'igbo', label: 'Igbo', flag: 'IG' },
+];
 
 interface Question {
   id: string;
@@ -63,9 +70,31 @@ export function QuizSession({ onComplete }: QuizSessionProps) {
   const [sessionComplete, setSessionComplete] = useState(false);
   const [correctCount, setCorrectCount] = useState(0);
   const [timeRemaining, setTimeRemaining] = useState(TIME_PER_QUESTION);
+  const [selectedLanguage, setSelectedLanguage] = useState(profile?.preferredLanguage || 'english');
 
   const currentQuestion = questions[currentQuestionIndex];
-  const language = profile?.preferredLanguage || 'english';
+  const language = selectedLanguage;
+
+  useEffect(() => {
+    if (profile?.preferredLanguage) {
+      setSelectedLanguage(profile.preferredLanguage);
+    }
+  }, [profile?.preferredLanguage]);
+
+  const handleLanguageChange = async (lang: string) => {
+    setSelectedLanguage(lang);
+    if (user) {
+      try {
+        await fetch(`/api/profile/${user.id}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ preferredLanguage: lang }),
+        });
+      } catch (error) {
+        console.error('Error updating language preference:', error);
+      }
+    }
+  };
 
   const getTranslatedText = (question: Question, field: 'question' | 'optionA' | 'optionB' | 'optionC') => {
     if (language === 'english') {
@@ -326,8 +355,8 @@ export function QuizSession({ onComplete }: QuizSessionProps) {
 
   if (!currentSession) {
     return (
-      <div className="bg-white rounded-xl shadow-lg p-8 text-center">
-        <div className="mb-6">
+      <div className="bg-white rounded-xl shadow-lg p-8">
+        <div className="text-center mb-6">
           <div className="inline-flex items-center justify-center w-20 h-20 bg-green-100 rounded-full mb-4">
             <Trophy className="text-green-600" size={40} />
           </div>
@@ -335,6 +364,44 @@ export function QuizSession({ onComplete }: QuizSessionProps) {
           <p className="text-gray-600 mb-6">
             Answer 5 sports questions. Get at least 3 correct to earn 1 point!
           </p>
+        </div>
+
+        <div className="bg-gradient-to-r from-green-50 to-blue-50 rounded-xl p-6 mb-6">
+          <div className="flex items-center gap-2 mb-4">
+            <Globe className="text-green-600" size={24} />
+            <h3 className="font-bold text-lg text-gray-900">Choose Your Language</h3>
+          </div>
+          <p className="text-gray-600 text-sm mb-4">
+            Select the language you want to answer questions in
+          </p>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+            {LANGUAGES.map((lang) => (
+              <button
+                key={lang.value}
+                onClick={() => handleLanguageChange(lang.value)}
+                className={`p-4 rounded-lg border-2 transition-all ${
+                  selectedLanguage === lang.value
+                    ? 'border-green-600 bg-green-100 shadow-md'
+                    : 'border-gray-200 bg-white hover:border-green-400'
+                }`}
+                data-testid={`button-language-${lang.value}`}
+              >
+                <div className={`text-2xl font-bold mb-1 ${
+                  selectedLanguage === lang.value ? 'text-green-600' : 'text-gray-400'
+                }`}>
+                  {lang.flag}
+                </div>
+                <div className={`font-semibold ${
+                  selectedLanguage === lang.value ? 'text-green-700' : 'text-gray-700'
+                }`}>
+                  {lang.label}
+                </div>
+                {selectedLanguage === lang.value && (
+                  <CheckCircle className="text-green-600 mx-auto mt-2" size={20} />
+                )}
+              </button>
+            ))}
+          </div>
         </div>
 
         <div className="bg-blue-50 rounded-lg p-6 mb-6 text-left">
@@ -345,18 +412,19 @@ export function QuizSession({ onComplete }: QuizSessionProps) {
             <li>Time per question: {TIME_PER_QUESTION} seconds</li>
             <li>Minimum correct: {MIN_CORRECT_ANSWERS}</li>
             <li>Reward: 1 point (if passed)</li>
-            <li>Language: {LANGUAGE_LABELS[language] || 'English'}</li>
           </ul>
         </div>
 
-        <button
-          onClick={startNewSession}
-          disabled={loading}
-          className="bg-green-600 text-white px-8 py-3 rounded-lg font-semibold hover:bg-green-700 transition-colors disabled:opacity-50"
-          data-testid="button-start-quiz-session"
-        >
-          {loading ? 'Starting...' : `Start Quiz (₦${QUIZ_COST})`}
-        </button>
+        <div className="text-center">
+          <button
+            onClick={startNewSession}
+            disabled={loading}
+            className="bg-green-600 text-white px-8 py-4 rounded-lg font-semibold hover:bg-green-700 transition-colors disabled:opacity-50 text-lg"
+            data-testid="button-start-quiz-session"
+          >
+            {loading ? 'Starting...' : `Start Quiz in ${LANGUAGE_LABELS[selectedLanguage]} (₦${QUIZ_COST})`}
+          </button>
+        </div>
       </div>
     );
   }
