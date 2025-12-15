@@ -35,6 +35,15 @@ interface WheelSpin {
   spunAt: string;
 }
 
+interface PublicWinner {
+  id: number;
+  prizeName: string;
+  prizeValue: number | null;
+  prizeType: string;
+  winnerName: string;
+  createdAt: string;
+}
+
 type ViewMode = 'dashboard' | 'quiz' | 'wheel' | 'settings';
 
 export function UserDashboard() {
@@ -44,6 +53,7 @@ export function UserDashboard() {
   const [userPoints, setUserPoints] = useState<UserPoints | null>(null);
   const [recentSessions, setRecentSessions] = useState<QuizSessionType[]>([]);
   const [recentSpins, setRecentSpins] = useState<WheelSpin[]>([]);
+  const [publicWinners, setPublicWinners] = useState<PublicWinner[]>([]);
   const [stats, setStats] = useState({
     totalSessions: 0,
     passedSessions: 0,
@@ -93,6 +103,13 @@ export function UserDashboard() {
           totalSpins: spins.length,
           totalWinnings,
         }));
+      }
+
+      // Fetch public winners
+      const winnersRes = await fetch('/api/winners/public');
+      if (winnersRes.ok) {
+        const winners = await winnersRes.json();
+        setPublicWinners(winners.slice(0, 5));
       }
     } catch (error) {
       console.error('Error loading user data:', error);
@@ -421,6 +438,46 @@ export function UserDashboard() {
               </p>
             )}
           </div>
+        </div>
+
+        <div className="bg-white rounded-xl shadow-lg p-6 mt-6">
+          <div className="flex items-center gap-2 mb-4">
+            <Trophy className="text-yellow-500" size={24} />
+            <h2 className="text-xl font-bold" data-testid="heading-recent-winners">Recent Winners</h2>
+          </div>
+          {publicWinners.length > 0 ? (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {publicWinners.map((winner) => (
+                <div
+                  key={winner.id}
+                  className="border border-gray-200 rounded-lg p-4 hover:shadow-md transition-shadow bg-gradient-to-br from-yellow-50 to-white"
+                  data-testid={`card-winner-${winner.id}`}
+                >
+                  <div className="flex items-center gap-2 mb-2">
+                    <Trophy className="text-yellow-500" size={16} />
+                    <span className="font-semibold text-gray-900" data-testid={`text-winner-name-${winner.id}`}>
+                      {winner.winnerName}
+                    </span>
+                  </div>
+                  <p className="text-sm text-gray-700 font-medium" data-testid={`text-prize-name-${winner.id}`}>
+                    {winner.prizeName}
+                  </p>
+                  {winner.prizeValue !== null && winner.prizeValue > 0 && (
+                    <p className="text-green-600 font-bold text-lg" data-testid={`text-prize-value-${winner.id}`}>
+                      ₦{winner.prizeValue.toLocaleString()}
+                    </p>
+                  )}
+                  <p className="text-xs text-gray-500 mt-2">
+                    {new Date(winner.createdAt).toLocaleDateString()}
+                  </p>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="text-gray-500 text-center py-8">
+              No winners yet. Be the first to win a prize!
+            </p>
+          )}
         </div>
       </div>
     </div>
