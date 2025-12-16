@@ -40,7 +40,8 @@ interface PublicWinner {
   prizeName: string;
   prizeValue: number | null;
   prizeType: string;
-  winnerName: string;
+  userFullName: string;
+  photoUrl: string | null;
   createdAt: string;
 }
 
@@ -453,23 +454,41 @@ export function UserDashboard() {
                   className="border border-gray-200 rounded-lg p-4 hover:shadow-md transition-shadow bg-gradient-to-br from-yellow-50 to-white"
                   data-testid={`card-winner-${winner.id}`}
                 >
-                  <div className="flex items-center gap-2 mb-2">
-                    <Trophy className="text-yellow-500" size={16} />
-                    <span className="font-semibold text-gray-900" data-testid={`text-winner-name-${winner.id}`}>
-                      {winner.winnerName}
-                    </span>
+                  <div className="flex items-center gap-3 mb-3">
+                    <div className="relative">
+                      {winner.photoUrl ? (
+                        <img
+                          src={winner.photoUrl}
+                          alt={winner.userFullName}
+                          className="w-12 h-12 rounded-full object-cover border-2 border-yellow-400"
+                          data-testid={`img-winner-photo-${winner.id}`}
+                        />
+                      ) : (
+                        <div className="w-12 h-12 rounded-full bg-gradient-to-br from-yellow-400 to-orange-500 flex items-center justify-center text-white font-bold text-lg">
+                          {winner.userFullName.charAt(0).toUpperCase()}
+                        </div>
+                      )}
+                      <Trophy className="absolute -bottom-1 -right-1 text-yellow-500 bg-white rounded-full p-0.5" size={16} />
+                    </div>
+                    <div>
+                      <span className="font-bold text-gray-900 block" data-testid={`text-winner-name-${winner.id}`}>
+                        {winner.userFullName}
+                      </span>
+                      <p className="text-xs text-gray-500">
+                        {new Date(winner.createdAt).toLocaleDateString()}
+                      </p>
+                    </div>
                   </div>
-                  <p className="text-sm text-gray-700 font-medium" data-testid={`text-prize-name-${winner.id}`}>
-                    {winner.prizeName}
-                  </p>
-                  {winner.prizeValue !== null && winner.prizeValue > 0 && (
-                    <p className="text-green-600 font-bold text-lg" data-testid={`text-prize-value-${winner.id}`}>
-                      ₦{winner.prizeValue.toLocaleString()}
+                  <div className="bg-green-50 rounded-lg p-2">
+                    <p className="text-sm text-gray-700 font-medium" data-testid={`text-prize-name-${winner.id}`}>
+                      {winner.prizeName}
                     </p>
-                  )}
-                  <p className="text-xs text-gray-500 mt-2">
-                    {new Date(winner.createdAt).toLocaleDateString()}
-                  </p>
+                    {winner.prizeValue !== null && Number(winner.prizeValue) > 0 && (
+                      <p className="text-green-600 font-bold text-xl" data-testid={`text-prize-value-${winner.id}`}>
+                        ₦{Number(winner.prizeValue).toLocaleString()}
+                      </p>
+                    )}
+                  </div>
                 </div>
               ))}
             </div>

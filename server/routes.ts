@@ -909,14 +909,18 @@ export function registerRoutes(app: Express) {
   app.get("/api/winners/public", async (_req, res) => {
     try {
       const allWinners = await storage.getAllWinners();
-      // Return limited info for public display - exclude sensitive bank details
-      const publicWinners = allWinners.map(w => ({
-        id: w.id,
-        prizeName: w.prizeName,
-        prizeType: w.prizeType,
-        prizeValue: w.prizeValue,
-        userFullName: w.userFullName ? w.userFullName.split(' ')[0] + ' ***' : 'Anonymous',
-        createdAt: w.createdAt
+      // Fetch profile photos for each winner and show full name
+      const publicWinners = await Promise.all(allWinners.map(async (w) => {
+        const profile = await storage.getProfile(w.userId);
+        return {
+          id: w.id,
+          prizeName: w.prizeName,
+          prizeType: w.prizeType,
+          prizeValue: w.prizeValue,
+          userFullName: w.userFullName || 'Winner',
+          photoUrl: profile?.photoUrl || null,
+          createdAt: w.createdAt
+        };
       }));
       res.json(publicWinners);
     } catch (error: any) {
