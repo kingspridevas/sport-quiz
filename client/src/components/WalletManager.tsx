@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useAuth } from '../contexts/AuthContext';
-import { Wallet as WalletIcon, Plus, ArrowUpRight, Copy, Clock, CreditCard } from 'lucide-react';
+import { Wallet as WalletIcon, Plus, ArrowUpRight, Copy, Clock, CreditCard, Building2 } from 'lucide-react';
 
 interface Wallet {
   id: string;
@@ -18,6 +18,8 @@ interface VirtualAccount {
   expiresAt: string;
 }
 
+type PaymentMethod = 'select' | 'paystack' | 'bank';
+
 export function WalletManager() {
   const { user, profile } = useAuth();
   const [wallet, setWallet] = useState<Wallet | null>(null);
@@ -27,6 +29,7 @@ export function WalletManager() {
   const [processing, setProcessing] = useState(false);
   const [virtualAccount, setVirtualAccount] = useState<VirtualAccount | null>(null);
   const [copied, setCopied] = useState(false);
+  const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('select');
 
   useEffect(() => {
     if (user) {
@@ -101,7 +104,47 @@ export function WalletManager() {
     setShowFundModal(false);
     setVirtualAccount(null);
     setFundAmount('');
+    setPaymentMethod('select');
     loadWallet();
+  };
+
+  const handlePaystackPayment = async () => {
+    if (!user || !profile) return;
+
+    const amount = parseFloat(fundAmount);
+    if (isNaN(amount) || amount < 100) {
+      alert('Minimum amount is ₦100');
+      return;
+    }
+
+    setProcessing(true);
+
+    try {
+      const response = await fetch('/api/paystack/initialize', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          amount: amount,
+          userId: user.id,
+          email: profile.email,
+        }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Failed to initialize payment');
+      }
+
+      const result = await response.json();
+      window.location.href = result.authorization_url;
+    } catch (error) {
+      alert('Error initializing payment: ' + (error as Error).message);
+      console.error(error);
+    } finally {
+      setProcessing(false);
+    }
   };
 
   if (loading) {
@@ -165,7 +208,7 @@ export function WalletManager() {
       {showFundModal && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
           <div className="bg-white rounded-xl p-6 max-w-md w-full max-h-[90vh] overflow-y-auto">
-            {!virtualAccount ? (
+            {paymentMethod === 'select' ? (
               <>
                 <h3 className="text-xl font-bold mb-4">Fund Your Wallet</h3>
                 <div className="mb-4">
@@ -177,30 +220,67 @@ export function WalletManager() {
                     value={fundAmount}
                     onChange={(e) => setFundAmount(e.target.value)}
                     className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
-                    placeholder="Enter amount"
-                    min="1"
+                    placeholder="Enter amount (min ₦100)"
+                    min="100"
                     data-testid="input-fund-amount"
                   />
                 </div>
-                <div className="flex gap-3">
+                
+                <p className="text-sm font-medium text-gray-700 mb-3">Choose Payment Method</p>
+                <div className="space-y-3 mb-4">
                   <button
-                    onClick={handleFundWallet}
+                    onClick={() => {
+                      if (!fundAmount || parseFloat(fundAmount) < 100) {
+                        alert('Please enter an amount of at least ₦100');
+                        return;
+                      }
+                      handlePaystackPayment();
+                    }}
                     disabled={processing}
-                    className="flex-1 bg-green-600 text-white py-2 rounded-lg font-semibold hover:bg-green-700 transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
-                    data-testid="button-generate-account"
+                    className="w-full bg-gradient-to-r from-green-500 to-green-600 text-white py-4 rounded-lg font-semibold hover:from-green-600 hover:to-green-700 transition-all disabled:opacity-50 flex items-center justify-center gap-3"
+                    data-testid="button-paystack-payment"
                   >
-                    <ArrowUpRight size={20} />
-                    {processing ? 'Generating...' : 'Generate Account'}
+                    <CreditCard size={24} />
+                    <div className="text-left">
+                      <div className="font-bold">Pay with Paystack</div>
+                      <div className="text-xs opacity-90">Card, Bank Transfer, USSD</div>
+                    </div>
                   </button>
+                  
                   <button
-                    onClick={closePaymentModal}
-                    className="flex-1 bg-gray-200 text-gray-700 py-2 rounded-lg font-semibold hover:bg-gray-300 transition-colors"
-                    data-testid="button-cancel-fund"
+                    onClick={() => {
+                      if (!fundAmount || parseFloat(fundAmount) < 100) {
+                        alert('Please enter an amount of at least ₦100');
+                        return;
+                      }
+                      setPaymentMethod('bank');
+                      handleFundWallet();
+                    }}
+                    disabled={processing}
+                    className="w-full bg-gradient-to-r from-blue-500 to-blue-600 text-white py-4 rounded-lg font-semibold hover:from-blue-600 hover:to-blue-700 transition-all disabled:opacity-50 flex items-center justify-center gap-3"
+                    data-testid="button-bank-transfer"
                   >
-                    Cancel
+                    <Building2 size={24} />
+                    <div className="text-left">
+                      <div className="font-bold">Bank Transfer</div>
+                      <div className="text-xs opacity-90">Generate virtual account</div>
+                    </div>
                   </button>
                 </div>
+                
+                <button
+                  onClick={closePaymentModal}
+                  className="w-full bg-gray-200 text-gray-700 py-2 rounded-lg font-semibold hover:bg-gray-300 transition-colors"
+                  data-testid="button-cancel-fund"
+                >
+                  Cancel
+                </button>
               </>
+            ) : !virtualAccount ? (
+              <div className="text-center py-8">
+                <div className="animate-spin w-8 h-8 border-4 border-green-500 border-t-transparent rounded-full mx-auto mb-4"></div>
+                <p className="text-gray-600">Generating payment details...</p>
+              </div>
             ) : (
               <>
                 <div className="text-center mb-6">

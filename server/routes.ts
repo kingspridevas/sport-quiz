@@ -4,6 +4,7 @@ import { storage } from "./storage.js";
 import { authSignupSchema, authLoginSchema, insertQuestionSchema, insertQuizSessionSchema, insertQuizAnswerSchema } from "../shared/schema.js";
 import { createVirtualAccount, reallocateVirtualAccount, deactivateVirtualAccount, reactivateVirtualAccount } from "./psb-service.js";
 import { getUncachableSendGridClient } from "./sendgrid.js";
+import { initializeTransaction, verifyTransaction } from "./paystack.js";
 import type { Winner } from "../shared/schema.js";
 
 const ADMIN_NOTIFICATION_EMAIL = "wazosportsng@gmail.com";
@@ -1002,6 +1003,152 @@ export function registerRoutes(app: Express) {
       res.json(updated);
     } catch (error: any) {
       res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Paystack Payment Integration
+  app.post("/api/paystack/initialize", async (req, res) => {
+    try {
+      const { userId, amount, email } = req.body;
+      
+      if (!userId || !amount || !email) {
+        return res.status(400).json({ error: "userId, amount, and email are required" });
+      }
+
+      const amountNum = Number(amount);
+      if (isNaN(amountNum) || amountNum < 100) {
+        return res.status(400).json({ error: "Minimum amount is ₦100" });
+      }
+
+      // Get callback URL from request host
+      const protocol = req.headers['x-forwarded-proto'] || req.protocol || 'https';
+      const host = req.headers['x-forwarded-host'] || req.headers.host;
+      const callbackUrl = `${protocol}://${host}/api/paystack/callback`;
+
+      const result = await initializeTransaction(
+        email,
+        amountNum,
+        callbackUrl,
+        { userId, purpose: 'wallet_funding' }
+      );
+
+      res.json({
+        status: 'success',
+        authorization_url: result.data.authorization_url,
+        reference: result.data.reference,
+        access_code: result.data.access_code
+      });
+    } catch (error: any) {
+      console.error('Paystack initialize error:', error);
+      res.status(500).json({ error: error.message || 'Failed to initialize payment' });
+    }
+  });
+
+  app.get("/api/paystack/callback", async (req, res) => {
+    try {
+      const { reference } = req.query;
+      
+      if (!reference || typeof reference !== 'string') {
+        return res.redirect('/?payment=error&message=Invalid reference');
+      }
+
+      const result = await verifyTransaction(reference);
+
+      if (result.data.status === 'success') {
+        const metadata = result.data.metadata;
+        const userId = metadata?.userId;
+        const amountInKobo = result.data.amount;
+        const amountInNaira = amountInKobo / 100;
+
+        if (userId) {
+          // Check for duplicate transaction (idempotency)
+          const existingTransaction = await storage.getWalletTransactionByReference(reference);
+          if (existingTransaction) {
+            return res.redirect(`/?payment=success&amount=${amountInNaira}&message=Already processed`);
+          }
+
+          // Get current wallet and update balance
+          const wallet = await storage.getWallet(userId);
+          if (wallet) {
+            const currentBalance = Number(wallet.balance) || 0;
+            const currentTotalFunded = Number(wallet.totalFunded) || 0;
+            
+            await storage.updateWallet(wallet.id, {
+              balance: String(currentBalance + amountInNaira),
+              totalFunded: String(currentTotalFunded + amountInNaira)
+            });
+
+            // Create wallet transaction record
+            await storage.createWalletTransaction({
+              walletId: wallet.id,
+              type: 'credit',
+              amount: String(amountInNaira),
+              description: `Paystack funding - Ref: ${reference}`,
+              status: 'completed',
+              reference: reference
+            });
+
+            return res.redirect(`/?payment=success&amount=${amountInNaira}`);
+          }
+        }
+        
+        return res.redirect('/?payment=error&message=Could not find wallet');
+      } else {
+        return res.redirect(`/?payment=failed&message=${result.data.gateway_response || 'Payment failed'}`);
+      }
+    } catch (error: any) {
+      console.error('Paystack callback error:', error);
+      return res.redirect(`/?payment=error&message=${encodeURIComponent(error.message)}`);
+    }
+  });
+
+  // Paystack webhook for reliable payment confirmation
+  app.post("/api/paystack/webhook", async (req, res) => {
+    try {
+      const event = req.body;
+      
+      // Verify this is a charge.success event
+      if (event.event === 'charge.success') {
+        const data = event.data;
+        const reference = data.reference;
+        const metadata = data.metadata;
+        const userId = metadata?.userId;
+        const amountInKobo = data.amount;
+        const amountInNaira = amountInKobo / 100;
+
+        if (userId) {
+          // Check if this transaction was already processed
+          const existingTransaction = await storage.getWalletTransactionByReference(reference);
+          if (existingTransaction) {
+            return res.sendStatus(200);
+          }
+
+          const wallet = await storage.getWallet(userId);
+          if (wallet) {
+            const currentBalance = Number(wallet.balance) || 0;
+            const currentTotalFunded = Number(wallet.totalFunded) || 0;
+            
+            await storage.updateWallet(wallet.id, {
+              balance: String(currentBalance + amountInNaira),
+              totalFunded: String(currentTotalFunded + amountInNaira)
+            });
+
+            await storage.createWalletTransaction({
+              walletId: wallet.id,
+              type: 'credit',
+              amount: String(amountInNaira),
+              description: `Paystack funding - Ref: ${reference}`,
+              status: 'completed',
+              reference: reference
+            });
+          }
+        }
+      }
+
+      res.sendStatus(200);
+    } catch (error: any) {
+      console.error('Paystack webhook error:', error);
+      res.sendStatus(500);
     }
   });
 }
