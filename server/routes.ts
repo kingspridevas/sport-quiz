@@ -694,10 +694,12 @@ export function registerRoutes(app: Express) {
 
         await storage.createWalletTransaction({
           walletId: wallet.id,
-          type: "funding",
+          type: "credit",
           amount: transaction.amount,
           description: "Wallet funding via bank transfer",
           reference: transaction.reference,
+          source: "9psb",
+          status: "completed"
         });
       }
 
@@ -1085,7 +1087,8 @@ export function registerRoutes(app: Express) {
               amount: String(amountInNaira),
               description: `Paystack funding - Ref: ${reference}`,
               status: 'completed',
-              reference: reference
+              reference: reference,
+              source: 'paystack'
             });
 
             return res.redirect(`/?payment=success&amount=${amountInNaira}`);
@@ -1139,7 +1142,8 @@ export function registerRoutes(app: Express) {
               amount: String(amountInNaira),
               description: `Paystack funding - Ref: ${reference}`,
               status: 'completed',
-              reference: reference
+              reference: reference,
+              source: 'paystack'
             });
           }
         }

@@ -64,10 +64,12 @@ export type Wallet = typeof wallets.$inferSelect;
 export const walletTransactions = pgTable("wallet_transactions", {
   id: uuid("id").primaryKey().defaultRandom(),
   walletId: uuid("wallet_id").notNull().references(() => wallets.id, { onDelete: "cascade" }),
-  type: text("type").notNull(), // 'funding', 'withdrawal', 'prize', 'refund'
+  type: text("type").notNull(), // 'credit', 'debit', 'prize', 'refund'
   amount: numeric("amount").notNull(),
   description: text("description"),
   reference: text("reference"),
+  source: text("source"), // 'paystack', '9psb', 'system', 'admin'
+  status: text("status").default("completed"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
