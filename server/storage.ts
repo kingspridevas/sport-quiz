@@ -11,6 +11,8 @@ import {  profiles,
   dailyWinnerLimits,
   paymentTransactions,
   winners,
+  referrals,
+  referralSettings,
   type Profile,
   type Wallet,
   type WalletTransaction,
@@ -23,6 +25,8 @@ import {  profiles,
   type DailyWinnerLimit,
   type PaymentTransaction,
   type Winner,
+  type Referral,
+  type ReferralSettings,
   type InsertProfile,
   type InsertWallet,
   type InsertWalletTransaction,
@@ -35,6 +39,8 @@ import {  profiles,
   type InsertDailyWinnerLimit,
   type InsertPaymentTransaction,
   type InsertWinner,
+  type InsertReferral,
+  type InsertReferralSettings,
 } from "../shared/schema.js";
 import { eq, and, sql as drizzleSql, desc, gte, lte, ilike, or } from "drizzle-orm";
 
@@ -122,6 +128,25 @@ export interface IStorage {
   getAllWinners(): Promise<Winner[]>;
   getWinner(id: string): Promise<Winner | undefined>;
   updateWinner(id: string, updates: Partial<InsertWinner>): Promise<Winner | undefined>;
+  
+  // Referrals
+  getProfileByReferralCode(code: string): Promise<Profile | undefined>;
+  createReferral(referral: InsertReferral): Promise<Referral>;
+  getReferral(id: string): Promise<Referral | undefined>;
+  getReferralByRefereeId(refereeId: string): Promise<Referral | undefined>;
+  getUserReferrals(referrerId: string): Promise<Referral[]>;
+  getAllReferrals(): Promise<Array<Referral & { referrerEmail: string; referrerName: string | null; refereeEmail: string; refereeName: string | null }>>;
+  getPendingReferrals(): Promise<Array<Referral & { referrerEmail: string; referrerName: string | null; refereeEmail: string; refereeName: string | null }>>;
+  getQualifiedReferrals(): Promise<Array<Referral & { referrerEmail: string; referrerName: string | null; refereeEmail: string; refereeName: string | null }>>;
+  updateReferral(id: string, updates: Partial<InsertReferral>): Promise<Referral | undefined>;
+  
+  // Referral Settings
+  getReferralSettings(): Promise<ReferralSettings | undefined>;
+  createReferralSettings(settings: InsertReferralSettings): Promise<ReferralSettings>;
+  updateReferralSettings(id: string, updates: Partial<InsertReferralSettings>): Promise<ReferralSettings | undefined>;
+  
+  // Referral Stats
+  getReferralStats(userId: string): Promise<{ totalReferrals: number; qualifiedReferrals: number; pendingReferrals: number; totalEarnings: number }>;
 }
 
 export class DbStorage implements IStorage {
@@ -524,6 +549,157 @@ export class DbStorage implements IStorage {
       .where(eq(winners.id, id))
       .returning();
     return result[0];
+  }
+
+  // Referrals
+  async getProfileByReferralCode(code: string) {
+    const result = await db.select().from(profiles).where(eq(profiles.referralCode, code));
+    return result[0];
+  }
+
+  async createReferral(referral: InsertReferral) {
+    const result = await db.insert(referrals).values(referral).returning();
+    return result[0];
+  }
+
+  async getReferral(id: string) {
+    const result = await db.select().from(referrals).where(eq(referrals.id, id));
+    return result[0];
+  }
+
+  async getReferralByRefereeId(refereeId: string) {
+    const result = await db.select().from(referrals).where(eq(referrals.refereeId, refereeId));
+    return result[0];
+  }
+
+  async getUserReferrals(referrerId: string) {
+    return db.select().from(referrals).where(eq(referrals.referrerId, referrerId)).orderBy(desc(referrals.createdAt));
+  }
+
+  async getAllReferrals() {
+    const referrerProfiles = db.select().from(profiles).as('referrer');
+    const refereeProfiles = db.select().from(profiles).as('referee');
+    
+    return db
+      .select({
+        id: referrals.id,
+        referrerId: referrals.referrerId,
+        refereeId: referrals.refereeId,
+        referralCode: referrals.referralCode,
+        status: referrals.status,
+        qualifiedAt: referrals.qualifiedAt,
+        rewardedAt: referrals.rewardedAt,
+        rewardAmount: referrals.rewardAmount,
+        rewardTransactionId: referrals.rewardTransactionId,
+        createdAt: referrals.createdAt,
+        referrerEmail: referrerProfiles.email,
+        referrerName: referrerProfiles.fullName,
+        refereeEmail: refereeProfiles.email,
+        refereeName: refereeProfiles.fullName,
+      })
+      .from(referrals)
+      .innerJoin(referrerProfiles, eq(referrals.referrerId, referrerProfiles.id))
+      .innerJoin(refereeProfiles, eq(referrals.refereeId, refereeProfiles.id))
+      .orderBy(desc(referrals.createdAt));
+  }
+
+  async getPendingReferrals() {
+    const referrerProfiles = db.select().from(profiles).as('referrer');
+    const refereeProfiles = db.select().from(profiles).as('referee');
+    
+    return db
+      .select({
+        id: referrals.id,
+        referrerId: referrals.referrerId,
+        refereeId: referrals.refereeId,
+        referralCode: referrals.referralCode,
+        status: referrals.status,
+        qualifiedAt: referrals.qualifiedAt,
+        rewardedAt: referrals.rewardedAt,
+        rewardAmount: referrals.rewardAmount,
+        rewardTransactionId: referrals.rewardTransactionId,
+        createdAt: referrals.createdAt,
+        referrerEmail: referrerProfiles.email,
+        referrerName: referrerProfiles.fullName,
+        refereeEmail: refereeProfiles.email,
+        refereeName: refereeProfiles.fullName,
+      })
+      .from(referrals)
+      .innerJoin(referrerProfiles, eq(referrals.referrerId, referrerProfiles.id))
+      .innerJoin(refereeProfiles, eq(referrals.refereeId, refereeProfiles.id))
+      .where(eq(referrals.status, 'pending'))
+      .orderBy(desc(referrals.createdAt));
+  }
+
+  async getQualifiedReferrals() {
+    const referrerProfiles = db.select().from(profiles).as('referrer');
+    const refereeProfiles = db.select().from(profiles).as('referee');
+    
+    return db
+      .select({
+        id: referrals.id,
+        referrerId: referrals.referrerId,
+        refereeId: referrals.refereeId,
+        referralCode: referrals.referralCode,
+        status: referrals.status,
+        qualifiedAt: referrals.qualifiedAt,
+        rewardedAt: referrals.rewardedAt,
+        rewardAmount: referrals.rewardAmount,
+        rewardTransactionId: referrals.rewardTransactionId,
+        createdAt: referrals.createdAt,
+        referrerEmail: referrerProfiles.email,
+        referrerName: referrerProfiles.fullName,
+        refereeEmail: refereeProfiles.email,
+        refereeName: refereeProfiles.fullName,
+      })
+      .from(referrals)
+      .innerJoin(referrerProfiles, eq(referrals.referrerId, referrerProfiles.id))
+      .innerJoin(refereeProfiles, eq(referrals.refereeId, refereeProfiles.id))
+      .where(eq(referrals.status, 'qualified'))
+      .orderBy(desc(referrals.createdAt));
+  }
+
+  async updateReferral(id: string, updates: Partial<InsertReferral>) {
+    const result = await db
+      .update(referrals)
+      .set(updates)
+      .where(eq(referrals.id, id))
+      .returning();
+    return result[0];
+  }
+
+  // Referral Settings
+  async getReferralSettings() {
+    const result = await db.select().from(referralSettings).limit(1);
+    return result[0];
+  }
+
+  async createReferralSettings(settings: InsertReferralSettings) {
+    const result = await db.insert(referralSettings).values(settings).returning();
+    return result[0];
+  }
+
+  async updateReferralSettings(id: string, updates: Partial<InsertReferralSettings>) {
+    const result = await db
+      .update(referralSettings)
+      .set({ ...updates, updatedAt: new Date() })
+      .where(eq(referralSettings.id, id))
+      .returning();
+    return result[0];
+  }
+
+  // Referral Stats
+  async getReferralStats(userId: string) {
+    const userReferrals = await db.select().from(referrals).where(eq(referrals.referrerId, userId));
+    
+    const totalReferrals = userReferrals.length;
+    const qualifiedReferrals = userReferrals.filter(r => r.status === 'qualified' || r.status === 'rewarded').length;
+    const pendingReferrals = userReferrals.filter(r => r.status === 'pending').length;
+    const totalEarnings = userReferrals
+      .filter(r => r.status === 'rewarded' && r.rewardAmount)
+      .reduce((sum, r) => sum + parseFloat(r.rewardAmount || '0'), 0);
+
+    return { totalReferrals, qualifiedReferrals, pendingReferrals, totalEarnings };
   }
 }
 
