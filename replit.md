@@ -63,6 +63,8 @@ Preferred communication style: Simple, everyday language.
 - `wheel_spins` - Record of prize wheel spins and winnings
 - `daily_winner_limits` - Daily caps on specific prize types
 - `payment_transactions` - External payment tracking
+- `referrals` - Referral relationships between users with status, qualification, and reward tracking
+- `referral_settings` - Configurable settings for referral program (reward amount, minimum funding, auto-reward toggle)
 
 **Schema Validation**: Zod schemas generated from Drizzle table definitions using `drizzle-zod` for runtime validation.
 
@@ -90,10 +92,21 @@ Preferred communication style: Simple, everyday language.
 - Points awarded for passing quizzes
 
 **Prize Wheel**:
-- Requires 10 points to spin
+- Requires 5 points to spin
 - Weighted probability system for prize distribution
 - Daily limits on high-value prizes
 - Prize types: cash, item, retry, draw, thank_you
+
+**Referral Program**:
+- Each user gets a unique 6-character alphanumeric referral code on signup
+- Signup flow accepts optional `?ref=CODE` query parameter to track referrals
+- Referrals tracked in `referrals` table with status: pending → qualified → rewarded
+- Qualification triggers when referee funds wallet with ≥₦500 (configurable)
+- Auto-reward system credits ₦200 (configurable) to referrer's wallet when enabled
+- Admin can manually reward/reject referrals when auto-reward is disabled
+- Settings managed via `referral_settings` table (reward amount, minimum funding, auto-reward toggle)
+- User dashboard displays referral code, shareable link, and earnings stats
+- Admin dashboard includes Referrals tab for managing settings and referrals
 
 **Multi-Language Support**: Questions and options stored with language variants (Yoruba, Hausa, Igbo) alongside English defaults.
 
