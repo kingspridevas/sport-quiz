@@ -822,6 +822,42 @@ export function registerRoutes(app: Express) {
     }
   });
 
+  app.get("/api/admin/wallet-transactions", async (req, res) => {
+    try {
+      const { source, startDate, endDate, search } = req.query;
+      
+      const filters: {
+        source?: string;
+        startDate?: Date;
+        endDate?: Date;
+        search?: string;
+      } = {};
+      
+      if (source && typeof source === 'string') {
+        filters.source = source;
+      }
+      
+      if (startDate && typeof startDate === 'string') {
+        filters.startDate = new Date(startDate);
+      }
+      
+      if (endDate && typeof endDate === 'string') {
+        const end = new Date(endDate);
+        end.setHours(23, 59, 59, 999);
+        filters.endDate = end;
+      }
+      
+      if (search && typeof search === 'string') {
+        filters.search = search;
+      }
+      
+      const transactions = await storage.getAllWalletTransactionsWithUsers(filters);
+      res.json(transactions);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
   app.post("/api/admin/virtual-accounts/deactivate", async (req, res) => {
     try {
       const { accountNumber, transactionId } = req.body;
