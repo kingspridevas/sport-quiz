@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useAuth } from '../contexts/AuthContext';
-import { Trophy, Clock, Gift, TrendingUp, LogOut, Settings, User as UserIcon, ChevronDown } from 'lucide-react';
+import { Trophy, Clock, Gift, TrendingUp, LogOut, Settings, User as UserIcon, ChevronDown, Share2, Copy, Check } from 'lucide-react';
 import { WalletManager } from './WalletManager';
 import { QuizSession } from './QuizSession';
 import { MagicWheel } from './MagicWheel';
@@ -61,6 +61,12 @@ export function UserDashboard() {
     totalSpins: 0,
     totalWinnings: 0,
   });
+  const [referralData, setReferralData] = useState<{
+    referralCode: string | null;
+    stats: { totalReferrals: number; qualifiedReferrals: number; rewardedReferrals: number; totalEarned: number };
+    referrals: { id: string; status: string; createdAt: string; rewardAmount: string | null }[];
+  } | null>(null);
+  const [copiedReferral, setCopiedReferral] = useState(false);
 
   useEffect(() => {
     if (user) {
@@ -112,8 +118,24 @@ export function UserDashboard() {
         const winners = await winnersRes.json();
         setPublicWinners(winners.slice(0, 5));
       }
+
+      // Fetch referral data
+      const referralRes = await fetch(`/api/referral/stats/${user.id}`);
+      if (referralRes.ok) {
+        const refData = await referralRes.json();
+        setReferralData(refData);
+      }
     } catch (error) {
       console.error('Error loading user data:', error);
+    }
+  };
+
+  const copyReferralLink = () => {
+    if (referralData?.referralCode) {
+      const link = `${window.location.origin}/signup?ref=${referralData.referralCode}`;
+      navigator.clipboard.writeText(link);
+      setCopiedReferral(true);
+      setTimeout(() => setCopiedReferral(false), 2000);
     }
   };
 
@@ -349,6 +371,87 @@ export function UserDashboard() {
               </ul>
             </div>
           </div>
+        </div>
+
+        <div className="bg-white rounded-xl shadow-lg p-6 mb-6">
+          <div className="flex items-center gap-2 mb-4">
+            <Share2 className="text-purple-600" size={24} />
+            <h2 className="text-xl font-bold">Refer Friends & Earn</h2>
+          </div>
+          
+          {referralData?.referralCode ? (
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+              <div className="lg:col-span-2">
+                <p className="text-gray-600 mb-4">
+                  Share your unique referral link with friends. When they sign up and fund their wallet with at least ₦500, you'll earn ₦200!
+                </p>
+                
+                <div className="flex items-center gap-2 mb-4">
+                  <div className="flex-1 bg-gray-100 rounded-lg px-4 py-3 font-mono text-sm overflow-hidden">
+                    <span className="truncate block" data-testid="text-referral-link">
+                      {`${window.location.origin}/signup?ref=${referralData.referralCode}`}
+                    </span>
+                  </div>
+                  <button
+                    onClick={copyReferralLink}
+                    className={`flex items-center gap-2 px-4 py-3 rounded-lg font-semibold transition-colors ${
+                      copiedReferral 
+                        ? 'bg-green-600 text-white' 
+                        : 'bg-purple-600 text-white hover:bg-purple-700'
+                    }`}
+                    data-testid="button-copy-referral"
+                  >
+                    {copiedReferral ? (
+                      <>
+                        <Check size={18} />
+                        Copied!
+                      </>
+                    ) : (
+                      <>
+                        <Copy size={18} />
+                        Copy Link
+                      </>
+                    )}
+                  </button>
+                </div>
+
+                <div className="bg-purple-50 rounded-lg p-4">
+                  <p className="text-sm text-purple-800">
+                    <strong>Your Referral Code:</strong> <span className="font-mono bg-purple-200 px-2 py-1 rounded" data-testid="text-referral-code">{referralData.referralCode}</span>
+                  </p>
+                </div>
+              </div>
+
+              <div className="bg-gradient-to-br from-purple-500 to-purple-600 rounded-xl p-4 text-white">
+                <h3 className="font-semibold mb-3">Your Referral Stats</h3>
+                <div className="space-y-2">
+                  <div className="flex justify-between">
+                    <span className="opacity-90">Total Referrals</span>
+                    <span className="font-bold" data-testid="text-total-referrals">{referralData.stats?.totalReferrals || 0}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="opacity-90">Qualified</span>
+                    <span className="font-bold" data-testid="text-qualified-referrals">{referralData.stats?.qualifiedReferrals || 0}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="opacity-90">Rewarded</span>
+                    <span className="font-bold" data-testid="text-rewarded-referrals">{referralData.stats?.rewardedReferrals || 0}</span>
+                  </div>
+                  <div className="border-t border-purple-400 pt-2 mt-2">
+                    <div className="flex justify-between">
+                      <span className="opacity-90">Total Earned</span>
+                      <span className="font-bold text-lg" data-testid="text-referral-earnings">₦{(referralData.stats?.totalEarned || 0).toLocaleString()}</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          ) : (
+            <div className="text-center py-8 text-gray-500">
+              <Share2 size={48} className="mx-auto mb-4 opacity-50" />
+              <p>Loading referral information...</p>
+            </div>
+          )}
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
