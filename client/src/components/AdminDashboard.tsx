@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { useAuth } from '../contexts/AuthContext';
-import { Plus, Edit2, Trash2, Save, X, Settings, LogOut, Upload, Download, HelpCircle, Gift, FileSpreadsheet, Users, Wallet, CreditCard, Activity, Eye, ChevronLeft, Calculator, Trophy, Check, DollarSign } from 'lucide-react';
+import { Plus, Edit2, Trash2, Save, X, Settings, LogOut, Upload, Download, HelpCircle, Gift, FileSpreadsheet, Users, Wallet, CreditCard, Activity, Eye, ChevronLeft, Calculator, Trophy, Check, DollarSign, Share2 } from 'lucide-react';
 
 interface Question {
   id: string;
@@ -132,9 +132,35 @@ interface WalletTransactionData {
   userFullName: string | null;
 }
 
+interface ReferralData {
+  id: string;
+  referrerId: string;
+  refereeId: string;
+  status: string;
+  rewardAmount: string | null;
+  rewardTransactionId: string | null;
+  qualifiedAt: string | null;
+  rewardedAt: string | null;
+  createdAt: string;
+  referrerEmail?: string;
+  referrerName?: string;
+  refereeEmail?: string;
+  refereeName?: string;
+}
+
+interface ReferralSettings {
+  id: string;
+  rewardAmount: string;
+  minimumFunding: string;
+  autoRewardEnabled: boolean;
+  isActive: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export function AdminDashboard() {
   const { profile, signOut } = useAuth();
-  const [activeTab, setActiveTab] = useState<'questions' | 'prizes' | 'users' | 'wallets' | 'payments' | 'activity' | 'bulk' | 'winners' | 'transactions'>('questions');
+  const [activeTab, setActiveTab] = useState<'questions' | 'prizes' | 'users' | 'wallets' | 'payments' | 'activity' | 'bulk' | 'winners' | 'transactions' | 'referrals'>('questions');
   const [questions, setQuestions] = useState<Question[]>([]);
   const [prizes, setPrizes] = useState<Prize[]>([]);
   const [stats, setStats] = useState<UserStats>({ totalUsers: 0, totalQuizzes: 0, totalWalletBalance: 0, totalPayments: 0 });
@@ -203,6 +229,19 @@ export function AdminDashboard() {
     probabilityWeight: '1',
   });
 
+  const [referrals, setReferrals] = useState<ReferralData[]>([]);
+  const [referralSettings, setReferralSettings] = useState<ReferralSettings | null>(null);
+  const [loadingReferrals, setLoadingReferrals] = useState(false);
+  const [processingReferral, setProcessingReferral] = useState<string | null>(null);
+  const [referralFilter, setReferralFilter] = useState<'all' | 'pending' | 'qualified' | 'rewarded'>('all');
+  const [editingReferralSettings, setEditingReferralSettings] = useState(false);
+  const [referralSettingsForm, setReferralSettingsForm] = useState({
+    rewardAmount: '200',
+    minimumFunding: '500',
+    autoRewardEnabled: true,
+    isActive: true,
+  });
+
   useEffect(() => {
     loadQuestions();
     loadPrizes();
@@ -213,6 +252,8 @@ export function AdminDashboard() {
     loadQuizSessions();
     loadWinners();
     loadWalletTransactions();
+    loadReferrals();
+    loadReferralSettings();
   }, []);
 
   const loadQuestions = async () => {
@@ -441,6 +482,110 @@ export function AdminDashboard() {
       console.error('Error marking winner as paid:', error);
     } finally {
       setProcessingWinner(null);
+    }
+  };
+
+  const loadReferrals = async (status?: string) => {
+    setLoadingReferrals(true);
+    try {
+      const url = status && status !== 'all' 
+        ? `/api/admin/referrals?status=${status}` 
+        : '/api/admin/referrals';
+      const response = await fetch(url);
+      if (response.ok) {
+        const data = await response.json();
+        setReferrals(data);
+      }
+    } catch (error) {
+      console.error('Error loading referrals:', error);
+    } finally {
+      setLoadingReferrals(false);
+    }
+  };
+
+  const loadReferralSettings = async () => {
+    try {
+      const response = await fetch('/api/admin/referral/settings');
+      if (response.ok) {
+        const data = await response.json();
+        setReferralSettings(data);
+        setReferralSettingsForm({
+          rewardAmount: data.rewardAmount,
+          minimumFunding: data.minimumFunding,
+          autoRewardEnabled: data.autoRewardEnabled,
+          isActive: data.isActive,
+        });
+      }
+    } catch (error) {
+      console.error('Error loading referral settings:', error);
+    }
+  };
+
+  const handleSaveReferralSettings = async () => {
+    if (!referralSettings) return;
+    
+    try {
+      const response = await fetch(`/api/admin/referral/settings/${referralSettings.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(referralSettingsForm),
+      });
+      
+      if (response.ok) {
+        const data = await response.json();
+        setReferralSettings(data);
+        setEditingReferralSettings(false);
+        alert('Referral settings updated successfully');
+      } else {
+        alert('Failed to update referral settings');
+      }
+    } catch (error) {
+      console.error('Error saving referral settings:', error);
+      alert('Error saving referral settings');
+    }
+  };
+
+  const handleRewardReferral = async (referralId: string) => {
+    setProcessingReferral(referralId);
+    try {
+      const response = await fetch(`/api/admin/referral/${referralId}/reward`, {
+        method: 'POST'
+      });
+      if (response.ok) {
+        await loadReferrals(referralFilter);
+        alert('Referral reward processed successfully');
+      } else {
+        const error = await response.json();
+        alert(`Failed to process reward: ${error.error}`);
+      }
+    } catch (error) {
+      console.error('Error rewarding referral:', error);
+      alert('Error processing referral reward');
+    } finally {
+      setProcessingReferral(null);
+    }
+  };
+
+  const handleRejectReferral = async (referralId: string) => {
+    if (!confirm('Are you sure you want to reject this referral? This cannot be undone.')) return;
+    
+    setProcessingReferral(referralId);
+    try {
+      const response = await fetch(`/api/admin/referral/${referralId}/reject`, {
+        method: 'POST'
+      });
+      if (response.ok) {
+        await loadReferrals(referralFilter);
+        alert('Referral rejected');
+      } else {
+        const error = await response.json();
+        alert(`Failed to reject referral: ${error.error}`);
+      }
+    } catch (error) {
+      console.error('Error rejecting referral:', error);
+      alert('Error rejecting referral');
+    } finally {
+      setProcessingReferral(null);
     }
   };
 
@@ -1044,6 +1189,21 @@ export function AdminDashboard() {
             >
               <Activity size={18} />
               Quiz Activity
+            </button>
+            <button
+              onClick={() => {
+                setActiveTab('referrals');
+                loadReferrals(referralFilter);
+              }}
+              className={`px-6 py-3 font-semibold transition-colors flex items-center gap-2 whitespace-nowrap ${
+                activeTab === 'referrals'
+                  ? 'border-b-2 border-blue-600 text-blue-600'
+                  : 'text-gray-600 hover:text-gray-900'
+              }`}
+              data-testid="tab-referrals"
+            >
+              <Share2 size={18} />
+              Referrals
             </button>
           </div>
         </div>
@@ -2496,6 +2656,268 @@ OR JSON format:
                     )}
                   </tbody>
                 </table>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {activeTab === 'referrals' && (
+          <div className="space-y-6">
+            <div className="bg-white rounded-xl shadow-sm p-6">
+              <div className="flex justify-between items-center mb-6">
+                <h2 className="text-xl font-bold flex items-center gap-2">
+                  <Settings size={24} className="text-blue-500" />
+                  Referral Settings
+                </h2>
+                {!editingReferralSettings ? (
+                  <button
+                    onClick={() => setEditingReferralSettings(true)}
+                    className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+                    data-testid="button-edit-referral-settings"
+                  >
+                    <Edit2 size={16} />
+                    Edit Settings
+                  </button>
+                ) : (
+                  <div className="flex gap-2">
+                    <button
+                      onClick={handleSaveReferralSettings}
+                      className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700"
+                      data-testid="button-save-referral-settings"
+                    >
+                      <Save size={16} />
+                      Save
+                    </button>
+                    <button
+                      onClick={() => {
+                        setEditingReferralSettings(false);
+                        if (referralSettings) {
+                          setReferralSettingsForm({
+                            rewardAmount: referralSettings.rewardAmount,
+                            minimumFunding: referralSettings.minimumFunding,
+                            autoRewardEnabled: referralSettings.autoRewardEnabled,
+                            isActive: referralSettings.isActive,
+                          });
+                        }
+                      }}
+                      className="flex items-center gap-2 px-4 py-2 bg-gray-500 text-white rounded-lg hover:bg-gray-600"
+                      data-testid="button-cancel-referral-settings"
+                    >
+                      <X size={16} />
+                      Cancel
+                    </button>
+                  </div>
+                )}
+              </div>
+
+              {referralSettings && (
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                  <div className="bg-gray-50 rounded-lg p-4">
+                    <label className="block text-sm text-gray-500 mb-1">Reward Amount</label>
+                    {editingReferralSettings ? (
+                      <input
+                        type="number"
+                        value={referralSettingsForm.rewardAmount}
+                        onChange={(e) => setReferralSettingsForm({ ...referralSettingsForm, rewardAmount: e.target.value })}
+                        className="w-full px-3 py-2 border rounded-lg"
+                        data-testid="input-reward-amount"
+                      />
+                    ) : (
+                      <p className="text-xl font-bold text-green-600">₦{parseFloat(referralSettings.rewardAmount).toLocaleString()}</p>
+                    )}
+                  </div>
+                  <div className="bg-gray-50 rounded-lg p-4">
+                    <label className="block text-sm text-gray-500 mb-1">Minimum Funding</label>
+                    {editingReferralSettings ? (
+                      <input
+                        type="number"
+                        value={referralSettingsForm.minimumFunding}
+                        onChange={(e) => setReferralSettingsForm({ ...referralSettingsForm, minimumFunding: e.target.value })}
+                        className="w-full px-3 py-2 border rounded-lg"
+                        data-testid="input-minimum-funding"
+                      />
+                    ) : (
+                      <p className="text-xl font-bold text-blue-600">₦{parseFloat(referralSettings.minimumFunding).toLocaleString()}</p>
+                    )}
+                  </div>
+                  <div className="bg-gray-50 rounded-lg p-4">
+                    <label className="block text-sm text-gray-500 mb-1">Auto-Reward</label>
+                    {editingReferralSettings ? (
+                      <select
+                        value={referralSettingsForm.autoRewardEnabled ? 'true' : 'false'}
+                        onChange={(e) => setReferralSettingsForm({ ...referralSettingsForm, autoRewardEnabled: e.target.value === 'true' })}
+                        className="w-full px-3 py-2 border rounded-lg"
+                        data-testid="select-auto-reward"
+                      >
+                        <option value="true">Enabled</option>
+                        <option value="false">Disabled (Manual)</option>
+                      </select>
+                    ) : (
+                      <p className={`text-xl font-bold ${referralSettings.autoRewardEnabled ? 'text-green-600' : 'text-yellow-600'}`}>
+                        {referralSettings.autoRewardEnabled ? 'Enabled' : 'Manual'}
+                      </p>
+                    )}
+                  </div>
+                  <div className="bg-gray-50 rounded-lg p-4">
+                    <label className="block text-sm text-gray-500 mb-1">Program Status</label>
+                    {editingReferralSettings ? (
+                      <select
+                        value={referralSettingsForm.isActive ? 'true' : 'false'}
+                        onChange={(e) => setReferralSettingsForm({ ...referralSettingsForm, isActive: e.target.value === 'true' })}
+                        className="w-full px-3 py-2 border rounded-lg"
+                        data-testid="select-program-status"
+                      >
+                        <option value="true">Active</option>
+                        <option value="false">Inactive</option>
+                      </select>
+                    ) : (
+                      <p className={`text-xl font-bold ${referralSettings.isActive ? 'text-green-600' : 'text-red-600'}`}>
+                        {referralSettings.isActive ? 'Active' : 'Inactive'}
+                      </p>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <div className="bg-white rounded-xl shadow-sm overflow-hidden">
+              <div className="p-6">
+                <div className="flex justify-between items-center mb-6">
+                  <h2 className="text-xl font-bold flex items-center gap-2">
+                    <Share2 size={24} className="text-purple-500" />
+                    Referral Management
+                  </h2>
+                  <div className="flex gap-2">
+                    <select
+                      value={referralFilter}
+                      onChange={(e) => {
+                        const newFilter = e.target.value as typeof referralFilter;
+                        setReferralFilter(newFilter);
+                        loadReferrals(newFilter);
+                      }}
+                      className="px-3 py-2 border rounded-lg"
+                      data-testid="select-referral-filter"
+                    >
+                      <option value="all">All Referrals</option>
+                      <option value="pending">Pending</option>
+                      <option value="qualified">Qualified</option>
+                      <option value="rewarded">Rewarded</option>
+                    </select>
+                  </div>
+                </div>
+                <div className="overflow-x-auto">
+                  <table className="w-full">
+                    <thead className="bg-gray-50">
+                      <tr>
+                        <th className="text-left py-3 px-4">Date</th>
+                        <th className="text-left py-3 px-4">Referrer</th>
+                        <th className="text-left py-3 px-4">Referee</th>
+                        <th className="text-left py-3 px-4">Status</th>
+                        <th className="text-left py-3 px-4">Reward</th>
+                        <th className="text-left py-3 px-4">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {loadingReferrals ? (
+                        <tr>
+                          <td colSpan={6} className="py-8 text-center text-gray-500">Loading...</td>
+                        </tr>
+                      ) : referrals.length === 0 ? (
+                        <tr>
+                          <td colSpan={6} className="py-8 text-center text-gray-500">No referrals found</td>
+                        </tr>
+                      ) : (
+                        referrals.map((referral) => (
+                          <tr key={referral.id} className="border-b hover:bg-gray-50">
+                            <td className="py-3 px-4">{new Date(referral.createdAt).toLocaleDateString()}</td>
+                            <td className="py-3 px-4">
+                              <div className="flex flex-col">
+                                <span className="font-medium">{referral.referrerName || 'Unknown'}</span>
+                                <span className="text-sm text-gray-500">{referral.referrerEmail || referral.referrerId}</span>
+                              </div>
+                            </td>
+                            <td className="py-3 px-4">
+                              <div className="flex flex-col">
+                                <span className="font-medium">{referral.refereeName || 'Unknown'}</span>
+                                <span className="text-sm text-gray-500">{referral.refereeEmail || referral.refereeId}</span>
+                              </div>
+                            </td>
+                            <td className="py-3 px-4">
+                              <span className={`px-2 py-1 rounded text-xs ${
+                                referral.status === 'rewarded' ? 'bg-green-100 text-green-700' :
+                                referral.status === 'qualified' ? 'bg-blue-100 text-blue-700' :
+                                referral.status === 'rejected' ? 'bg-red-100 text-red-700' :
+                                'bg-yellow-100 text-yellow-700'
+                              }`}>
+                                {referral.status}
+                              </span>
+                              {referral.qualifiedAt && (
+                                <span className="block text-xs text-gray-500 mt-1">
+                                  Qualified: {new Date(referral.qualifiedAt).toLocaleDateString()}
+                                </span>
+                              )}
+                            </td>
+                            <td className="py-3 px-4">
+                              {referral.rewardAmount ? (
+                                <span className="font-medium text-green-600">₦{parseFloat(referral.rewardAmount).toLocaleString()}</span>
+                              ) : (
+                                <span className="text-gray-400">-</span>
+                              )}
+                              {referral.rewardedAt && (
+                                <span className="block text-xs text-gray-500">
+                                  {new Date(referral.rewardedAt).toLocaleDateString()}
+                                </span>
+                              )}
+                            </td>
+                            <td className="py-3 px-4">
+                              <div className="flex gap-2">
+                                {referral.status === 'qualified' && (
+                                  <>
+                                    <button
+                                      onClick={() => handleRewardReferral(referral.id)}
+                                      disabled={processingReferral === referral.id}
+                                      className="flex items-center gap-1 px-2 py-1 bg-green-600 text-white rounded text-xs hover:bg-green-700 disabled:opacity-50"
+                                      data-testid={`button-reward-referral-${referral.id}`}
+                                    >
+                                      <DollarSign size={12} />
+                                      Reward
+                                    </button>
+                                    <button
+                                      onClick={() => handleRejectReferral(referral.id)}
+                                      disabled={processingReferral === referral.id}
+                                      className="flex items-center gap-1 px-2 py-1 bg-red-600 text-white rounded text-xs hover:bg-red-700 disabled:opacity-50"
+                                      data-testid={`button-reject-referral-${referral.id}`}
+                                    >
+                                      <X size={12} />
+                                      Reject
+                                    </button>
+                                  </>
+                                )}
+                                {referral.status === 'rewarded' && (
+                                  <span className="text-green-600 text-xs flex items-center gap-1">
+                                    <Check size={12} />
+                                    Rewarded
+                                  </span>
+                                )}
+                                {referral.status === 'rejected' && (
+                                  <span className="text-red-600 text-xs flex items-center gap-1">
+                                    <X size={12} />
+                                    Rejected
+                                  </span>
+                                )}
+                                {referral.status === 'pending' && (
+                                  <span className="text-yellow-600 text-xs">
+                                    Waiting for qualification
+                                  </span>
+                                )}
+                              </div>
+                            </td>
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
+                </div>
               </div>
             </div>
           </div>
