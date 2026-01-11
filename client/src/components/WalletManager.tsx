@@ -249,21 +249,15 @@ export function WalletManager() {
                   
                   <button
                     onClick={() => {
-                      if (!fundAmount || parseFloat(fundAmount) < 100) {
-                        alert('Please enter an amount of at least ₦100');
-                        return;
-                      }
-                      setPaymentMethod('bank');
-                      handleFundWallet();
+                      alert('This option is currently not available. Bank Transfer is in test mode. Please use Paystack for payments.');
                     }}
-                    disabled={processing}
-                    className="w-full bg-gradient-to-r from-blue-500 to-blue-600 text-white py-4 rounded-lg font-semibold hover:from-blue-600 hover:to-blue-700 transition-all disabled:opacity-50 flex items-center justify-center gap-3"
+                    className="w-full bg-gradient-to-r from-gray-400 to-gray-500 text-white py-4 rounded-lg font-semibold cursor-not-allowed opacity-70 flex items-center justify-center gap-3"
                     data-testid="button-bank-transfer"
                   >
                     <Building2 size={24} />
                     <div className="text-left">
                       <div className="font-bold">Bank Transfer</div>
-                      <div className="text-xs opacity-90">Generate virtual account</div>
+                      <div className="text-xs opacity-90">Currently unavailable (Test mode)</div>
                     </div>
                   </button>
                 </div>
