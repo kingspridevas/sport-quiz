@@ -9,6 +9,107 @@ import type { Winner } from "../shared/schema.js";
 
 const ADMIN_NOTIFICATION_EMAIL = "wazosportsng@gmail.com";
 
+// Check and process referral qualification when user funds wallet
+async function checkReferralQualification(userId: string, fundedAmount: number) {
+  try {
+    // Get the referral where this user is the referee
+    const referral = await storage.getReferralByRefereeId(userId);
+    if (!referral || referral.status !== 'pending') {
+      return; // No pending referral for this user
+    }
+
+    // Get referral settings
+    let settings = await storage.getReferralSettings();
+    if (!settings) {
+      // Create default settings if none exist
+      settings = await storage.createReferralSettings({
+        rewardAmount: "200",
+        minimumFunding: "500",
+        autoRewardEnabled: true,
+        isActive: true,
+      });
+    }
+
+    if (!settings.isActive) {
+      return; // Referral program is disabled
+    }
+
+    const minimumFunding = parseFloat(settings.minimumFunding);
+    
+    // Check if user has funded at least the minimum amount
+    const wallet = await storage.getWallet(userId);
+    if (!wallet) return;
+    
+    const totalFunded = parseFloat(wallet.totalFunded);
+    if (totalFunded < minimumFunding) {
+      return; // Not enough funding yet
+    }
+
+    // Mark referral as qualified
+    await storage.updateReferral(referral.id, {
+      status: 'qualified',
+      qualifiedAt: new Date(),
+    });
+
+    // If auto-reward is enabled, process the reward immediately
+    if (settings.autoRewardEnabled) {
+      await processReferralReward(referral.id, settings);
+    }
+  } catch (error) {
+    console.error('Error checking referral qualification:', error);
+  }
+}
+
+// Process referral reward - credit referrer's wallet
+async function processReferralReward(referralId: string, settings?: any) {
+  try {
+    const referral = await storage.getReferral(referralId);
+    if (!referral || referral.status === 'rewarded') {
+      return; // Already rewarded or not found
+    }
+
+    if (!settings) {
+      settings = await storage.getReferralSettings();
+    }
+    
+    if (!settings) return;
+
+    const rewardAmount = parseFloat(settings.rewardAmount);
+    
+    // Get referrer's wallet
+    const referrerWallet = await storage.getWallet(referral.referrerId);
+    if (!referrerWallet) return;
+
+    // Credit referrer's wallet
+    const currentBalance = parseFloat(referrerWallet.balance);
+    await storage.updateWallet(referrerWallet.id, {
+      balance: String(currentBalance + rewardAmount),
+    });
+
+    // Create wallet transaction for the reward
+    const transaction = await storage.createWalletTransaction({
+      walletId: referrerWallet.id,
+      type: 'credit',
+      amount: String(rewardAmount),
+      description: `Referral reward - User completed qualification`,
+      status: 'completed',
+      source: 'referral',
+    });
+
+    // Update referral status to rewarded
+    await storage.updateReferral(referralId, {
+      status: 'rewarded',
+      rewardedAt: new Date(),
+      rewardAmount: String(rewardAmount),
+      rewardTransactionId: transaction.id,
+    });
+
+    console.log(`Referral reward of ₦${rewardAmount} credited to user ${referral.referrerId}`);
+  } catch (error) {
+    console.error('Error processing referral reward:', error);
+  }
+}
+
 async function sendWinnerNotificationEmail(winner: Winner) {
   try {
     const { client, fromEmail } = await getUncachableSendGridClient();
@@ -54,7 +155,32 @@ export function registerRoutes(app: Express) {
         return res.status(400).json({ error: "User already exists with this email" });
       }
 
+      // Check if referral code was provided and validate it
+      let referrer: any = null;
+      if (validatedData.referralCode) {
+        referrer = await storage.getProfileByReferralCode(validatedData.referralCode);
+        if (!referrer) {
+          return res.status(400).json({ error: "Invalid referral code" });
+        }
+      }
+
       const passwordHash = await bcrypt.hash(validatedData.password, 10);
+
+      // Generate unique referral code for new user (6 chars alphanumeric)
+      const generateReferralCode = () => {
+        const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+        let code = '';
+        for (let i = 0; i < 6; i++) {
+          code += chars.charAt(Math.floor(Math.random() * chars.length));
+        }
+        return code;
+      };
+      
+      let userReferralCode = generateReferralCode();
+      // Ensure uniqueness
+      while (await storage.getProfileByReferralCode(userReferralCode)) {
+        userReferralCode = generateReferralCode();
+      }
 
       const profile = await storage.createProfile({
         email: validatedData.email,
@@ -64,10 +190,22 @@ export function registerRoutes(app: Express) {
         phoneNumber: validatedData.phoneNumber || null,
         location: validatedData.location || null,
         isAdmin: false,
+        referralCode: userReferralCode,
+        referredBy: referrer ? referrer.id : null,
       });
       
       await storage.createWallet({ userId: profile.id, balance: "0", totalFunded: "0" });
       await storage.createUserPoints({ userId: profile.id, points: 0, totalEarned: 0, totalSpent: 0 });
+      
+      // If user was referred, create referral record
+      if (referrer) {
+        await storage.createReferral({
+          referrerId: referrer.id,
+          refereeId: profile.id,
+          referralCode: validatedData.referralCode!,
+          status: 'pending',
+        });
+      }
       
       const { passwordHash: _, ...safeProfile } = profile;
       res.json({ profile: safeProfile });
@@ -1127,6 +1265,9 @@ export function registerRoutes(app: Express) {
               source: 'paystack'
             });
 
+            // Check if this funding qualifies a referral
+            await checkReferralQualification(userId, amountInNaira);
+
             return res.redirect(`/?payment=success&amount=${amountInNaira}`);
           }
         }
@@ -1181,6 +1322,9 @@ export function registerRoutes(app: Express) {
               reference: reference,
               source: 'paystack'
             });
+
+            // Check if this funding qualifies a referral
+            await checkReferralQualification(userId, amountInNaira);
           }
         }
       }
@@ -1189,6 +1333,156 @@ export function registerRoutes(app: Express) {
     } catch (error: any) {
       console.error('Paystack webhook error:', error);
       res.sendStatus(500);
+    }
+  });
+
+  // ============== REFERRAL ROUTES ==============
+
+  // Get user's referral stats and code
+  app.get("/api/referral/stats/:userId", async (req, res) => {
+    try {
+      const { userId } = req.params;
+      const profile = await storage.getProfile(userId);
+      
+      if (!profile) {
+        return res.status(404).json({ error: "User not found" });
+      }
+
+      const stats = await storage.getReferralStats(userId);
+      const referrals = await storage.getUserReferrals(userId);
+      
+      res.json({
+        referralCode: profile.referralCode,
+        stats,
+        referrals: referrals.map(r => ({
+          id: r.id,
+          status: r.status,
+          createdAt: r.createdAt,
+          qualifiedAt: r.qualifiedAt,
+          rewardedAt: r.rewardedAt,
+          rewardAmount: r.rewardAmount,
+        })),
+      });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Get referral settings (admin)
+  app.get("/api/admin/referral/settings", async (req, res) => {
+    try {
+      let settings = await storage.getReferralSettings();
+      if (!settings) {
+        settings = await storage.createReferralSettings({
+          rewardAmount: "200",
+          minimumFunding: "500",
+          autoRewardEnabled: true,
+          isActive: true,
+        });
+      }
+      res.json(settings);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Update referral settings (admin)
+  app.patch("/api/admin/referral/settings/:id", async (req, res) => {
+    try {
+      const { id } = req.params;
+      const updates = req.body;
+      const settings = await storage.updateReferralSettings(id, updates);
+      if (!settings) {
+        return res.status(404).json({ error: "Settings not found" });
+      }
+      res.json(settings);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Get all referrals (admin)
+  app.get("/api/admin/referrals", async (req, res) => {
+    try {
+      const { status } = req.query;
+      let referrals;
+      
+      if (status === 'pending') {
+        referrals = await storage.getPendingReferrals();
+      } else if (status === 'qualified') {
+        referrals = await storage.getQualifiedReferrals();
+      } else {
+        referrals = await storage.getAllReferrals();
+      }
+      
+      res.json(referrals);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Manually reward a referral (admin)
+  app.post("/api/admin/referral/:id/reward", async (req, res) => {
+    try {
+      const { id } = req.params;
+      const referral = await storage.getReferral(id);
+      
+      if (!referral) {
+        return res.status(404).json({ error: "Referral not found" });
+      }
+      
+      if (referral.status === 'rewarded') {
+        return res.status(400).json({ error: "Referral already rewarded" });
+      }
+      
+      if (referral.status !== 'qualified') {
+        return res.status(400).json({ error: "Referral not qualified yet" });
+      }
+      
+      await processReferralReward(id);
+      
+      const updatedReferral = await storage.getReferral(id);
+      res.json({ message: "Reward processed successfully", referral: updatedReferral });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Reject a referral (admin)
+  app.post("/api/admin/referral/:id/reject", async (req, res) => {
+    try {
+      const { id } = req.params;
+      const referral = await storage.getReferral(id);
+      
+      if (!referral) {
+        return res.status(404).json({ error: "Referral not found" });
+      }
+      
+      if (referral.status === 'rewarded') {
+        return res.status(400).json({ error: "Cannot reject an already rewarded referral" });
+      }
+      
+      await storage.updateReferral(id, { status: 'rejected' });
+      
+      res.json({ message: "Referral rejected" });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Validate referral code
+  app.get("/api/referral/validate/:code", async (req, res) => {
+    try {
+      const { code } = req.params;
+      const profile = await storage.getProfileByReferralCode(code);
+      
+      if (!profile) {
+        return res.json({ valid: false });
+      }
+      
+      res.json({ valid: true, referrerName: profile.fullName });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
     }
   });
 }
