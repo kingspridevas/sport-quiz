@@ -36,7 +36,7 @@ import {  profiles,
   type InsertPaymentTransaction,
   type InsertWinner,
 } from "../shared/schema.js";
-import { eq, and, sql as drizzleSql, desc } from "drizzle-orm";
+import { eq, and, sql as drizzleSql, desc, gte, lte, ilike, or } from "drizzle-orm";
 
 export interface IStorage {
   // Profiles
@@ -56,6 +56,12 @@ export interface IStorage {
   getWalletTransactions(walletId: string): Promise<WalletTransaction[]>;
   getWalletTransactionByReference(reference: string): Promise<WalletTransaction | undefined>;
   createWalletTransaction(transaction: InsertWalletTransaction): Promise<WalletTransaction>;
+  getAllWalletTransactionsWithUsers(filters?: {
+    source?: string;
+    startDate?: Date;
+    endDate?: Date;
+    search?: string;
+  }): Promise<Array<WalletTransaction & { userEmail: string; userFullName: string | null }>>;
   
   // Questions
   getActiveQuestions(limit?: number): Promise<Question[]>;
@@ -185,6 +191,63 @@ export class DbStorage implements IStorage {
   async createWalletTransaction(transaction: InsertWalletTransaction) {
     const result = await db.insert(walletTransactions).values(transaction).returning();
     return result[0];
+  }
+
+  async getAllWalletTransactionsWithUsers(filters?: {
+    source?: string;
+    startDate?: Date;
+    endDate?: Date;
+    search?: string;
+  }) {
+    const conditions: any[] = [];
+    
+    if (filters?.source && filters.source !== 'all') {
+      conditions.push(eq(walletTransactions.source, filters.source));
+    }
+    
+    if (filters?.startDate) {
+      conditions.push(gte(walletTransactions.createdAt, filters.startDate));
+    }
+    
+    if (filters?.endDate) {
+      conditions.push(lte(walletTransactions.createdAt, filters.endDate));
+    }
+
+    const baseQuery = db
+      .select({
+        id: walletTransactions.id,
+        walletId: walletTransactions.walletId,
+        type: walletTransactions.type,
+        amount: walletTransactions.amount,
+        description: walletTransactions.description,
+        reference: walletTransactions.reference,
+        source: walletTransactions.source,
+        status: walletTransactions.status,
+        createdAt: walletTransactions.createdAt,
+        userEmail: profiles.email,
+        userFullName: profiles.fullName,
+      })
+      .from(walletTransactions)
+      .innerJoin(wallets, eq(walletTransactions.walletId, wallets.id))
+      .innerJoin(profiles, eq(wallets.userId, profiles.id));
+
+    let results;
+    if (conditions.length > 0) {
+      results = await baseQuery.where(and(...conditions)).orderBy(desc(walletTransactions.createdAt));
+    } else {
+      results = await baseQuery.orderBy(desc(walletTransactions.createdAt));
+    }
+
+    // Filter by search if provided (email or full name)
+    if (filters?.search) {
+      const searchLower = filters.search.toLowerCase();
+      return results.filter(r => 
+        r.userEmail.toLowerCase().includes(searchLower) || 
+        (r.userFullName && r.userFullName.toLowerCase().includes(searchLower))
+      );
+    }
+
+    return results;
   }
 
   // Questions
