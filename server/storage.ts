@@ -212,6 +212,16 @@ export class DbStorage implements IStorage {
     if (filters?.endDate) {
       conditions.push(lte(walletTransactions.createdAt, filters.endDate));
     }
+    
+    if (filters?.search) {
+      const searchPattern = `%${filters.search}%`;
+      conditions.push(
+        or(
+          ilike(profiles.email, searchPattern),
+          ilike(profiles.fullName, searchPattern)
+        )
+      );
+    }
 
     const baseQuery = db
       .select({
@@ -231,23 +241,11 @@ export class DbStorage implements IStorage {
       .innerJoin(wallets, eq(walletTransactions.walletId, wallets.id))
       .innerJoin(profiles, eq(wallets.userId, profiles.id));
 
-    let results;
     if (conditions.length > 0) {
-      results = await baseQuery.where(and(...conditions)).orderBy(desc(walletTransactions.createdAt));
-    } else {
-      results = await baseQuery.orderBy(desc(walletTransactions.createdAt));
+      return baseQuery.where(and(...conditions)).orderBy(desc(walletTransactions.createdAt));
     }
-
-    // Filter by search if provided (email or full name)
-    if (filters?.search) {
-      const searchLower = filters.search.toLowerCase();
-      return results.filter(r => 
-        r.userEmail.toLowerCase().includes(searchLower) || 
-        (r.userFullName && r.userFullName.toLowerCase().includes(searchLower))
-      );
-    }
-
-    return results;
+    
+    return baseQuery.orderBy(desc(walletTransactions.createdAt));
   }
 
   // Questions

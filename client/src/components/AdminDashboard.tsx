@@ -118,9 +118,23 @@ interface UserDetail {
   paymentTransactions: PaymentData[];
 }
 
+interface WalletTransactionData {
+  id: string;
+  walletId: string;
+  type: string;
+  amount: string;
+  description: string | null;
+  reference: string | null;
+  source: string | null;
+  status: string | null;
+  createdAt: string;
+  userEmail: string;
+  userFullName: string | null;
+}
+
 export function AdminDashboard() {
   const { profile, signOut } = useAuth();
-  const [activeTab, setActiveTab] = useState<'questions' | 'prizes' | 'users' | 'wallets' | 'payments' | 'activity' | 'bulk' | 'winners'>('questions');
+  const [activeTab, setActiveTab] = useState<'questions' | 'prizes' | 'users' | 'wallets' | 'payments' | 'activity' | 'bulk' | 'winners' | 'transactions'>('questions');
   const [questions, setQuestions] = useState<Question[]>([]);
   const [prizes, setPrizes] = useState<Prize[]>([]);
   const [stats, setStats] = useState<UserStats>({ totalUsers: 0, totalQuizzes: 0, totalWalletBalance: 0, totalPayments: 0 });
@@ -139,6 +153,14 @@ export function AdminDashboard() {
   const [quizSessions, setQuizSessions] = useState<QuizSessionData[]>([]);
   const [winners, setWinners] = useState<WinnerData[]>([]);
   const [processingWinner, setProcessingWinner] = useState<string | null>(null);
+  const [walletTransactions, setWalletTransactions] = useState<WalletTransactionData[]>([]);
+  const [transactionFilters, setTransactionFilters] = useState({
+    source: 'all',
+    startDate: '',
+    endDate: '',
+    search: ''
+  });
+  const [loadingTransactions, setLoadingTransactions] = useState(false);
   const [selectedUser, setSelectedUser] = useState<UserDetail | null>(null);
   const [loadingUser, setLoadingUser] = useState(false);
   const [editingUser, setEditingUser] = useState(false);
@@ -190,6 +212,7 @@ export function AdminDashboard() {
     loadPayments();
     loadQuizSessions();
     loadWinners();
+    loadWalletTransactions();
   }, []);
 
   const loadQuestions = async () => {
@@ -358,6 +381,35 @@ export function AdminDashboard() {
     } catch (error) {
       console.error('Error loading winners:', error);
     }
+  };
+
+  const loadWalletTransactions = async (filters?: typeof transactionFilters) => {
+    setLoadingTransactions(true);
+    try {
+      const params = new URLSearchParams();
+      const f = filters || transactionFilters;
+      
+      if (f.source && f.source !== 'all') params.append('source', f.source);
+      if (f.startDate) params.append('startDate', f.startDate);
+      if (f.endDate) params.append('endDate', f.endDate);
+      if (f.search) params.append('search', f.search);
+      
+      const response = await fetch(`/api/admin/wallet-transactions?${params.toString()}`);
+      if (response.ok) {
+        const data = await response.json();
+        setWalletTransactions(data);
+      }
+    } catch (error) {
+      console.error('Error loading wallet transactions:', error);
+    } finally {
+      setLoadingTransactions(false);
+    }
+  };
+
+  const handleTransactionFilterChange = (key: keyof typeof transactionFilters, value: string) => {
+    const newFilters = { ...transactionFilters, [key]: value };
+    setTransactionFilters(newFilters);
+    loadWalletTransactions(newFilters);
   };
 
   const handleProcessWinner = async (winnerId: string) => {
@@ -968,6 +1020,18 @@ export function AdminDashboard() {
             >
               <CreditCard size={18} />
               Payments
+            </button>
+            <button
+              onClick={() => setActiveTab('transactions')}
+              className={`px-6 py-3 font-semibold transition-colors flex items-center gap-2 whitespace-nowrap ${
+                activeTab === 'transactions'
+                  ? 'border-b-2 border-blue-600 text-blue-600'
+                  : 'text-gray-600 hover:text-gray-900'
+              }`}
+              data-testid="tab-transactions"
+            >
+              <DollarSign size={18} />
+              Transactions
             </button>
             <button
               onClick={() => setActiveTab('activity')}
@@ -2133,6 +2197,134 @@ OR JSON format:
                     )}
                   </tbody>
                 </table>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {activeTab === 'transactions' && (
+          <div>
+            <h2 className="text-2xl font-bold mb-6">Wallet Transactions</h2>
+            
+            <div className="bg-white dark:bg-gray-800 rounded-xl shadow-lg p-4 mb-6">
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Source</label>
+                  <select
+                    value={transactionFilters.source}
+                    onChange={(e) => handleTransactionFilterChange('source', e.target.value)}
+                    className="w-full border rounded-lg px-3 py-2 dark:bg-gray-700 dark:border-gray-600"
+                    data-testid="select-transaction-source"
+                  >
+                    <option value="all">All Sources</option>
+                    <option value="paystack">Paystack</option>
+                    <option value="9psb">9PSB (Bank Transfer)</option>
+                    <option value="system">System</option>
+                    <option value="admin">Admin</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Start Date</label>
+                  <input
+                    type="date"
+                    value={transactionFilters.startDate}
+                    onChange={(e) => handleTransactionFilterChange('startDate', e.target.value)}
+                    className="w-full border rounded-lg px-3 py-2 dark:bg-gray-700 dark:border-gray-600"
+                    data-testid="input-transaction-start-date"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">End Date</label>
+                  <input
+                    type="date"
+                    value={transactionFilters.endDate}
+                    onChange={(e) => handleTransactionFilterChange('endDate', e.target.value)}
+                    className="w-full border rounded-lg px-3 py-2 dark:bg-gray-700 dark:border-gray-600"
+                    data-testid="input-transaction-end-date"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Search (Email/Name)</label>
+                  <input
+                    type="text"
+                    value={transactionFilters.search}
+                    onChange={(e) => handleTransactionFilterChange('search', e.target.value)}
+                    placeholder="Search by email or name..."
+                    className="w-full border rounded-lg px-3 py-2 dark:bg-gray-700 dark:border-gray-600"
+                    data-testid="input-transaction-search"
+                  />
+                </div>
+              </div>
+            </div>
+
+            <div className="bg-white dark:bg-gray-800 rounded-xl shadow-lg overflow-hidden">
+              <div className="overflow-x-auto">
+                {loadingTransactions ? (
+                  <div className="py-8 text-center text-gray-500">Loading transactions...</div>
+                ) : (
+                  <table className="w-full">
+                    <thead className="bg-gray-50 dark:bg-gray-700">
+                      <tr>
+                        <th className="text-left py-3 px-4">Date</th>
+                        <th className="text-left py-3 px-4">User</th>
+                        <th className="text-left py-3 px-4">Type</th>
+                        <th className="text-left py-3 px-4">Amount</th>
+                        <th className="text-left py-3 px-4">Source</th>
+                        <th className="text-left py-3 px-4">Description</th>
+                        <th className="text-left py-3 px-4">Status</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {walletTransactions.length === 0 ? (
+                        <tr>
+                          <td colSpan={7} className="py-8 text-center text-gray-500">No transactions found</td>
+                        </tr>
+                      ) : (
+                        walletTransactions.map((tx) => (
+                          <tr key={tx.id} className="border-b hover:bg-gray-50 dark:hover:bg-gray-700">
+                            <td className="py-3 px-4">{new Date(tx.createdAt).toLocaleDateString()}</td>
+                            <td className="py-3 px-4">
+                              <div>
+                                <div className="font-medium">{tx.userFullName || 'N/A'}</div>
+                                <div className="text-xs text-gray-500">{tx.userEmail}</div>
+                              </div>
+                            </td>
+                            <td className="py-3 px-4">
+                              <span className={`px-2 py-1 rounded text-xs ${
+                                tx.type === 'credit' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'
+                              }`}>
+                                {tx.type}
+                              </span>
+                            </td>
+                            <td className="py-3 px-4 font-semibold">₦{parseFloat(tx.amount).toLocaleString()}</td>
+                            <td className="py-3 px-4">
+                              <span className={`px-2 py-1 rounded text-xs ${
+                                tx.source === 'paystack' ? 'bg-purple-100 text-purple-700' :
+                                tx.source === '9psb' ? 'bg-blue-100 text-blue-700' :
+                                tx.source === 'system' ? 'bg-gray-100 text-gray-700' :
+                                tx.source === 'admin' ? 'bg-orange-100 text-orange-700' :
+                                'bg-gray-100 text-gray-600'
+                              }`}>
+                                {tx.source || 'unknown'}
+                              </span>
+                            </td>
+                            <td className="py-3 px-4 text-sm text-gray-500 max-w-xs truncate">{tx.description || '-'}</td>
+                            <td className="py-3 px-4">
+                              <span className={`px-2 py-1 rounded text-xs ${
+                                tx.status === 'completed' ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-700'
+                              }`}>
+                                {tx.status || 'pending'}
+                              </span>
+                            </td>
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
+                )}
+              </div>
+              <div className="px-4 py-3 bg-gray-50 dark:bg-gray-700 text-sm text-gray-600 dark:text-gray-300">
+                Total: {walletTransactions.length} transactions
               </div>
             </div>
           </div>
