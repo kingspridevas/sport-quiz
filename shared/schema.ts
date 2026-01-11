@@ -17,6 +17,8 @@ export const profiles = pgTable("profiles", {
   bankAccountNumber: text("bank_account_number"),
   accountVerified: boolean("account_verified").default(false),
   isAdmin: boolean("is_admin").default(false).notNull(),
+  referralCode: text("referral_code").unique(), // Unique referral code for this user
+  referredBy: uuid("referred_by"), // User ID of who referred this user
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
@@ -34,6 +36,7 @@ export const authSignupSchema = z.object({
   sex: z.string().optional(),
   phoneNumber: z.string().optional(),
   location: z.string().optional(),
+  referralCode: z.string().optional(), // Referral code from another user
 });
 
 export const authLoginSchema = z.object({
@@ -260,3 +263,40 @@ export const insertWinnerSchema = createInsertSchema(winners).omit({
 });
 export type InsertWinner = z.infer<typeof insertWinnerSchema>;
 export type Winner = typeof winners.$inferSelect;
+
+// Referral System
+export const referrals = pgTable("referrals", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  referrerId: uuid("referrer_id").notNull().references(() => profiles.id, { onDelete: "cascade" }),
+  refereeId: uuid("referee_id").notNull().references(() => profiles.id, { onDelete: "cascade" }),
+  referralCode: text("referral_code").notNull(),
+  status: text("status").default("pending").notNull(), // 'pending', 'qualified', 'rewarded', 'rejected'
+  qualifiedAt: timestamp("qualified_at"),
+  rewardedAt: timestamp("rewarded_at"),
+  rewardAmount: numeric("reward_amount"),
+  rewardTransactionId: uuid("reward_transaction_id"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export const insertReferralSchema = createInsertSchema(referrals).omit({
+  id: true,
+  createdAt: true,
+});
+export type InsertReferral = z.infer<typeof insertReferralSchema>;
+export type Referral = typeof referrals.$inferSelect;
+
+export const referralSettings = pgTable("referral_settings", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  rewardAmount: numeric("reward_amount").default("200").notNull(), // Amount rewarded to referrer
+  minimumFunding: numeric("minimum_funding").default("500").notNull(), // Minimum funding by referee to qualify
+  autoRewardEnabled: boolean("auto_reward_enabled").default(true).notNull(), // Auto-reward or manual
+  isActive: boolean("is_active").default(true).notNull(), // Enable/disable referral program
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export const insertReferralSettingsSchema = createInsertSchema(referralSettings).omit({
+  id: true,
+  updatedAt: true,
+});
+export type InsertReferralSettings = z.infer<typeof insertReferralSettingsSchema>;
+export type ReferralSettings = typeof referralSettings.$inferSelect;
