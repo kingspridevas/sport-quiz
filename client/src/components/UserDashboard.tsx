@@ -386,15 +386,20 @@ export function UserDashboard() {
                   Share your unique referral link with friends. When they sign up and fund their wallet with at least ₦500, you'll earn ₦200!
                 </p>
                 
-                <div className="flex items-center gap-2 mb-4">
-                  <div className="flex-1 bg-gray-100 rounded-lg px-4 py-3 font-mono text-sm overflow-hidden">
-                    <span className="truncate block" data-testid="text-referral-link">
+                <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 mb-4">
+                  <div 
+                    className="flex-1 bg-gray-100 rounded-lg px-4 py-3 font-mono text-sm cursor-pointer hover:bg-gray-200 transition-colors flex items-center justify-between gap-2"
+                    onClick={copyReferralLink}
+                    data-testid="text-referral-link"
+                  >
+                    <span className="truncate">
                       {`${window.location.origin}/signup?ref=${referralData.referralCode}`}
                     </span>
+                    <Copy size={16} className="text-gray-500 flex-shrink-0" />
                   </div>
                   <button
                     onClick={copyReferralLink}
-                    className={`flex items-center gap-2 px-4 py-3 rounded-lg font-semibold transition-colors ${
+                    className={`flex items-center justify-center gap-2 px-4 py-3 rounded-lg font-semibold transition-colors whitespace-nowrap ${
                       copiedReferral 
                         ? 'bg-green-600 text-white' 
                         : 'bg-purple-600 text-white hover:bg-purple-700'
