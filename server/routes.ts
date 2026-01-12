@@ -1342,10 +1342,30 @@ export function registerRoutes(app: Express) {
   app.get("/api/referral/stats/:userId", async (req, res) => {
     try {
       const { userId } = req.params;
-      const profile = await storage.getProfile(userId);
+      let profile = await storage.getProfile(userId);
       
       if (!profile) {
         return res.status(404).json({ error: "User not found" });
+      }
+
+      // Generate referral code on-demand for users who don't have one (legacy users)
+      if (!profile.referralCode) {
+        const generateReferralCode = () => {
+          const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+          let code = '';
+          for (let i = 0; i < 6; i++) {
+            code += chars.charAt(Math.floor(Math.random() * chars.length));
+          }
+          return code;
+        };
+        
+        let newCode = generateReferralCode();
+        while (await storage.getProfileByReferralCode(newCode)) {
+          newCode = generateReferralCode();
+        }
+        
+        await storage.updateProfile(userId, { referralCode: newCode });
+        profile = { ...profile, referralCode: newCode };
       }
 
       const stats = await storage.getReferralStats(userId);
