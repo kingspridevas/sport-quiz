@@ -7,7 +7,7 @@ import { getUncachableSendGridClient } from "./sendgrid.js";
 import { initializeTransaction, verifyTransaction } from "./paystack.js";
 import type { Winner } from "../shared/schema.js";
 
-const ADMIN_NOTIFICATION_EMAIL = "wazosportsng@gmail.com";
+const ADMIN_NOTIFICATION_EMAIL = "wazosportswinners@gmail.com";
 
 // Check and process referral qualification when user funds wallet
 async function checkReferralQualification(userId: string, fundedAmount: number) {
