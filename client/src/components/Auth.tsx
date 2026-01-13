@@ -26,6 +26,8 @@ export function Auth() {
   const [location, setLocation] = useState('');
   const [photo, setPhoto] = useState<File | null>(null);
   const [photoPreview, setPhotoPreview] = useState<string>('');
+  const [referralCode, setReferralCode] = useState('');
+  const [showReferralInput, setShowReferralInput] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [loading, setLoading] = useState(false);
@@ -36,7 +38,18 @@ export function Auth() {
   useEffect(() => {
     loadTodaysWinners();
     checkPasswordRecovery();
+    checkReferralCode();
   }, []);
+
+  const checkReferralCode = () => {
+    const urlParams = new URLSearchParams(window.location.search);
+    const refCode = urlParams.get('ref');
+    if (refCode) {
+      setReferralCode(refCode.toUpperCase());
+      setShowReferralInput(true);
+      setIsSignUp(true);
+    }
+  };
 
   const checkPasswordRecovery = () => {
     const hashParams = new URLSearchParams(window.location.hash.substring(1));
@@ -129,7 +142,7 @@ export function Auth() {
         if (!sex) {
           throw new Error('Please select your gender');
         }
-        await signUp(email, password, fullName, sex, phoneNumber, location, photo);
+        await signUp(email, password, fullName, sex, phoneNumber, location, photo, referralCode || undefined);
       } else {
         await signIn(email, password);
       }
@@ -460,6 +473,41 @@ export function Auth() {
                 placeholder="Min. 6 characters"
               />
             </div>
+
+            {isSignUp && (
+              <div>
+                {!showReferralInput ? (
+                  <button
+                    type="button"
+                    onClick={() => setShowReferralInput(true)}
+                    className="text-sm text-green-600 hover:text-green-700 font-medium"
+                    data-testid="button-show-referral"
+                  >
+                    Have a referral code?
+                  </button>
+                ) : (
+                  <>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Referral Code (Optional)
+                    </label>
+                    <input
+                      type="text"
+                      value={referralCode}
+                      onChange={(e) => setReferralCode(e.target.value.toUpperCase())}
+                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent uppercase"
+                      placeholder="Enter referral code"
+                      maxLength={6}
+                      data-testid="input-referral-code"
+                    />
+                    {referralCode && (
+                      <p className="text-xs text-green-600 mt-1">
+                        Referral code applied: {referralCode}
+                      </p>
+                    )}
+                  </>
+                )}
+              </div>
+            )}
             </>
             )}
 

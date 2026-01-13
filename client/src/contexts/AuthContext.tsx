@@ -84,7 +84,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     sex: string,
     phoneNumber: string,
     location: string,
-    _photo: File | null
+    _photo: File | null,
+    referralCode?: string
   ) => {
     const response = await fetch('/api/auth/signup', {
       method: 'POST',
@@ -96,6 +97,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         sex: sex || undefined,
         phoneNumber: phoneNumber || undefined,
         location: location || undefined,
+        referralCode: referralCode || undefined,
       }),
     });
 
