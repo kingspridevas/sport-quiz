@@ -1371,17 +1371,29 @@ export function registerRoutes(app: Express) {
       const stats = await storage.getReferralStats(userId);
       const referrals = await storage.getUserReferrals(userId);
       
+      // Fetch referee details including their names and wallet funding
+      const referralsWithDetails = await Promise.all(
+        referrals.map(async (r) => {
+          const refereeProfile = await storage.getProfile(r.refereeId);
+          const refereeWallet = await storage.getWallet(r.refereeId);
+          return {
+            id: r.id,
+            status: r.status,
+            createdAt: r.createdAt,
+            qualifiedAt: r.qualifiedAt,
+            rewardedAt: r.rewardedAt,
+            rewardAmount: r.rewardAmount,
+            refereeName: refereeProfile?.fullName || refereeProfile?.email || 'Unknown',
+            refereeEmail: refereeProfile?.email || '',
+            refereeFundedAmount: refereeWallet?.totalFunded || '0',
+          };
+        })
+      );
+      
       res.json({
         referralCode: profile.referralCode,
         stats,
-        referrals: referrals.map(r => ({
-          id: r.id,
-          status: r.status,
-          createdAt: r.createdAt,
-          qualifiedAt: r.qualifiedAt,
-          rewardedAt: r.rewardedAt,
-          rewardAmount: r.rewardAmount,
-        })),
+        referrals: referralsWithDetails,
       });
     } catch (error: any) {
       res.status(500).json({ error: error.message });

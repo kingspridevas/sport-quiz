@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useAuth } from '../contexts/AuthContext';
-import { Trophy, Clock, Gift, TrendingUp, LogOut, Settings, User as UserIcon, ChevronDown, Share2, Copy, Check } from 'lucide-react';
+import { Trophy, Clock, Gift, TrendingUp, LogOut, Settings, User as UserIcon, ChevronDown, Share2, Copy, Check, Users } from 'lucide-react';
 import { WalletManager } from './WalletManager';
 import { QuizSession } from './QuizSession';
 import { MagicWheel } from './MagicWheel';
@@ -64,7 +64,15 @@ export function UserDashboard() {
   const [referralData, setReferralData] = useState<{
     referralCode: string | null;
     stats: { totalReferrals: number; qualifiedReferrals: number; rewardedReferrals: number; totalEarned: number };
-    referrals: { id: string; status: string; createdAt: string; rewardAmount: string | null }[];
+    referrals: { 
+      id: string; 
+      status: string; 
+      createdAt: string; 
+      rewardAmount: string | null;
+      refereeName: string;
+      refereeEmail: string;
+      refereeFundedAmount: string;
+    }[];
   } | null>(null);
   const [copiedReferral, setCopiedReferral] = useState(false);
 
@@ -380,6 +388,7 @@ export function UserDashboard() {
           </div>
           
           {referralData?.referralCode ? (
+            <>
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
               <div className="lg:col-span-2">
                 <p className="text-gray-600 mb-4">
@@ -451,6 +460,67 @@ export function UserDashboard() {
                 </div>
               </div>
             </div>
+
+            {referralData?.referrals && referralData.referrals.length > 0 && (
+              <div className="mt-6">
+                <h3 className="font-semibold text-gray-800 mb-3 flex items-center gap-2">
+                  <Users size={20} className="text-purple-600" />
+                  People You Referred ({referralData.referrals.length})
+                </h3>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="bg-purple-50 text-purple-800">
+                        <th className="px-4 py-2 text-left rounded-tl-lg">Name</th>
+                        <th className="px-4 py-2 text-right">Amount Funded</th>
+                        <th className="px-4 py-2 text-center">Status</th>
+                        <th className="px-4 py-2 text-right rounded-tr-lg">Your Reward</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {referralData.referrals.map((referral) => (
+                        <tr 
+                          key={referral.id} 
+                          className="border-b border-gray-100 hover:bg-gray-50"
+                          data-testid={`row-referral-${referral.id}`}
+                        >
+                          <td className="px-4 py-3">
+                            <div>
+                              <p className="font-medium text-gray-800">{referral.refereeName}</p>
+                              <p className="text-xs text-gray-500">{referral.refereeEmail}</p>
+                            </div>
+                          </td>
+                          <td className="px-4 py-3 text-right font-medium">
+                            ₦{parseFloat(referral.refereeFundedAmount || '0').toLocaleString()}
+                          </td>
+                          <td className="px-4 py-3 text-center">
+                            <span className={`px-2 py-1 rounded-full text-xs font-medium ${
+                              referral.status === 'rewarded' 
+                                ? 'bg-green-100 text-green-700'
+                                : referral.status === 'qualified'
+                                ? 'bg-blue-100 text-blue-700'
+                                : referral.status === 'rejected'
+                                ? 'bg-red-100 text-red-700'
+                                : 'bg-yellow-100 text-yellow-700'
+                            }`}>
+                              {referral.status === 'pending' ? 'Awaiting ₦500 funding' : referral.status.charAt(0).toUpperCase() + referral.status.slice(1)}
+                            </span>
+                          </td>
+                          <td className="px-4 py-3 text-right">
+                            {referral.status === 'rewarded' && referral.rewardAmount ? (
+                              <span className="text-green-600 font-semibold">₦{parseFloat(referral.rewardAmount).toLocaleString()}</span>
+                            ) : (
+                              <span className="text-gray-400">-</span>
+                            )}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+            </>
           ) : (
             <div className="text-center py-8 text-gray-500">
               <Share2 size={48} className="mx-auto mb-4 opacity-50" />
