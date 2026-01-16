@@ -86,52 +86,49 @@ export function UserDashboard() {
     if (!user) return;
 
     try {
-      const pointsRes = await fetch(`/api/points/${user.id}`);
-      if (pointsRes.ok) {
-        const points = await pointsRes.json();
-        setUserPoints(points);
-      }
-
-      const sessionsRes = await fetch(`/api/quiz/user/${user.id}`);
-      if (sessionsRes.ok) {
-        const sessions = await sessionsRes.json();
-        setRecentSessions(sessions.slice(0, 5));
+      // Use combined dashboard endpoint for faster loading
+      const dashboardRes = await fetch(`/api/dashboard/${user.id}`);
+      if (dashboardRes.ok) {
+        const data = await dashboardRes.json();
         
-        const passed = sessions.filter((s: QuizSessionType) => s.pointsEarned > 0).length;
-        setStats((prev) => ({
-          ...prev,
-          totalSessions: sessions.length,
-          passedSessions: passed,
-        }));
-      }
-
-      const spinsRes = await fetch(`/api/wheel/spins/${user.id}`);
-      if (spinsRes.ok) {
-        const spins = await spinsRes.json();
-        setRecentSpins(spins.slice(0, 5));
+        // Set points
+        if (data.points) {
+          setUserPoints(data.points);
+        }
         
-        const totalWinnings = spins
-          .filter((s: WheelSpin) => s.prizeValue)
-          .reduce((sum: number, s: WheelSpin) => sum + (Number(s.prizeValue) || 0), 0);
-        setStats((prev) => ({
-          ...prev,
-          totalSpins: spins.length,
-          totalWinnings,
-        }));
-      }
-
-      // Fetch public winners
-      const winnersRes = await fetch('/api/winners/public');
-      if (winnersRes.ok) {
-        const winners = await winnersRes.json();
-        setPublicWinners(winners.slice(0, 5));
-      }
-
-      // Fetch referral data
-      const referralRes = await fetch(`/api/referral/stats/${user.id}`);
-      if (referralRes.ok) {
-        const refData = await referralRes.json();
-        setReferralData(refData);
+        // Set sessions
+        if (data.sessions) {
+          setRecentSessions(data.sessions);
+          const passed = data.sessions.filter((s: QuizSessionType) => s.pointsEarned > 0).length;
+          setStats((prev) => ({
+            ...prev,
+            totalSessions: data.sessions.length,
+            passedSessions: passed,
+          }));
+        }
+        
+        // Set spins
+        if (data.spins) {
+          setRecentSpins(data.spins);
+          const totalWinnings = data.spins
+            .filter((s: WheelSpin) => s.prizeValue)
+            .reduce((sum: number, s: WheelSpin) => sum + (Number(s.prizeValue) || 0), 0);
+          setStats((prev) => ({
+            ...prev,
+            totalSpins: data.spins.length,
+            totalWinnings,
+          }));
+        }
+        
+        // Set public winners
+        if (data.winners) {
+          setPublicWinners(data.winners.slice(0, 5));
+        }
+        
+        // Set referral data
+        if (data.referral) {
+          setReferralData(data.referral);
+        }
       }
     } catch (error) {
       console.error('Error loading user data:', error);

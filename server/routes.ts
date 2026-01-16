@@ -239,6 +239,61 @@ export function registerRoutes(app: Express) {
     }
   });
 
+  // Combined dashboard data endpoint for faster loading
+  app.get("/api/dashboard/:userId", async (req, res) => {
+    try {
+      const userId = req.params.userId;
+      
+      // Fetch all dashboard data in parallel
+      const [points, sessions, spins, winners, referralStats] = await Promise.all([
+        storage.getUserPoints(userId),
+        storage.getUserQuizSessions(userId),
+        storage.getUserWheelSpins(userId),
+        storage.getAllWinners(),
+        (async () => {
+          const profile = await storage.getProfile(userId);
+          if (!profile) return null;
+          
+          const referrals = await storage.getUserReferrals(userId);
+          const referralsWithDetails = await Promise.all(
+            referrals.map(async (ref: any) => {
+              const referee = await storage.getProfile(ref.refereeId);
+              const refereeWallet = await storage.getWallet(ref.refereeId);
+              return {
+                ...ref,
+                refereeName: referee?.fullName || 'Unknown',
+                refereeEmail: referee?.email || '',
+                refereeFundedAmount: refereeWallet?.totalFunded || '0',
+              };
+            })
+          );
+          
+          return {
+            referralCode: profile.referralCode,
+            referralLink: `https://wazosports.com/signup?ref=${profile.referralCode}`,
+            stats: {
+              totalReferrals: referrals.length,
+              qualifiedReferrals: referrals.filter((r: any) => r.status === 'qualified' || r.status === 'rewarded').length,
+              rewardedReferrals: referrals.filter((r: any) => r.status === 'rewarded').length,
+              totalEarned: referrals.filter((r: any) => r.status === 'rewarded').reduce((sum: number, r: any) => sum + parseFloat(r.rewardAmount || '0'), 0),
+            },
+            referrals: referralsWithDetails,
+          };
+        })(),
+      ]);
+
+      res.json({
+        points,
+        sessions: sessions.slice(0, 5), // Only last 5 sessions
+        spins: spins.slice(0, 5), // Only last 5 spins
+        winners: winners.slice(0, 10), // Only last 10 winners
+        referral: referralStats,
+      });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
   // Profiles
   app.get("/api/profile/:id", async (req, res) => {
     try {
