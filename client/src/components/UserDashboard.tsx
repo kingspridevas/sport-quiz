@@ -461,12 +461,12 @@ export function UserDashboard() {
               </div>
             </div>
 
-            {referralData?.referrals && referralData.referrals.length > 0 && (
-              <div className="mt-6">
-                <h3 className="font-semibold text-gray-800 mb-3 flex items-center gap-2">
-                  <Users size={20} className="text-purple-600" />
-                  People You Referred ({referralData.referrals.length})
-                </h3>
+            <div className="mt-6 border border-gray-200 rounded-xl p-4">
+              <h3 className="font-semibold text-gray-800 mb-4 flex items-center gap-2">
+                <Users size={20} className="text-purple-600" />
+                Your Referrals
+              </h3>
+              {referralData?.referrals && referralData.referrals.length > 0 ? (
                 <div className="overflow-x-auto">
                   <table className="w-full text-sm">
                     <thead>
@@ -518,8 +518,14 @@ export function UserDashboard() {
                     </tbody>
                   </table>
                 </div>
-              </div>
-            )}
+              ) : (
+                <div className="text-center py-8">
+                  <Users size={48} className="mx-auto mb-3 text-gray-300" />
+                  <p className="text-gray-500 font-medium">No referrals yet</p>
+                  <p className="text-gray-400 text-sm mt-1">Share your link to start earning!</p>
+                </div>
+              )}
+            </div>
             </>
           ) : (
             <div className="text-center py-8 text-gray-500">
