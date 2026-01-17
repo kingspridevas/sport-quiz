@@ -350,9 +350,29 @@ export function registerRoutes(app: Express) {
   // Wallets
   app.get("/api/wallet/:userId", async (req, res) => {
     try {
-      const wallet = await storage.getWallet(req.params.userId);
+      let wallet = await storage.getWallet(req.params.userId);
       if (!wallet) {
-        return res.status(404).json({ error: "Wallet not found" });
+        // Auto-create wallet for existing users who don't have one
+        const profile = await storage.getProfile(req.params.userId);
+        if (!profile) {
+          return res.status(404).json({ error: "User not found" });
+        }
+        // Create wallet for this user
+        wallet = await storage.createWallet({
+          userId: req.params.userId,
+          balance: "0",
+          totalFunded: "0",
+        });
+        // Also ensure user has points record
+        const points = await storage.getUserPoints(req.params.userId);
+        if (!points) {
+          await storage.createUserPoints({
+            userId: req.params.userId,
+            pointsBalance: 0,
+            totalEarned: 0,
+            totalSpent: 0,
+          });
+        }
       }
       res.json(wallet);
     } catch (error: any) {
