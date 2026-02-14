@@ -42,7 +42,11 @@ app.use((req, res, next) => {
   const PORT = 5000;
   const httpServer = app.listen(PORT, "0.0.0.0");
   
-  await setupVite(app, httpServer);
+  if (process.env.NODE_ENV === "production") {
+    serveStatic(app);
+  } else {
+    await setupVite(app, httpServer);
+  }
   
   log(`Server running on port ${PORT}`);
 })();
