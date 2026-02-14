@@ -51,7 +51,7 @@ Deno.serve(async (req: Request) => {
     const expectedHash = await sha512(expectedHashInput);
 
     if (receivedHash !== expectedHash) {
-      console.error("Hash mismatch. Expected:", expectedHash, "Received:", receivedHash);
+      console.error("Hash mismatch. Webhook request rejected.");
       return new Response(
         JSON.stringify({ code: "47", message: "Invalid hash" }),
         {
