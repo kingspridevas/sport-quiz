@@ -7,9 +7,9 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "Content-Type, Authorization, X-Client-Info, Apikey",
 };
 
-const PSB_BASE_URL = "https://baastest.9psb.com.ng/iva-api/v1/merchant/virtualaccount";
-const PSB_PUBLIC_KEY = "5DC6CF5DCDF049CAB9ABA91099DACF83";
-const PSB_PRIVATE_KEY = "OyVxqDeDeXtDRzTSyJSZ1qUUOJTKKNLNl3zL05usNyGNbytCyfgi1-t7QMN3pkyA";
+const PSB_BASE_URL = Deno.env.get("PSB_BASE_URL") || "https://baastest.9psb.com.ng/iva-api/v1/merchant/virtualaccount";
+const PSB_PUBLIC_KEY = Deno.env.get("PSB_PUBLIC_KEY")!;
+const PSB_PRIVATE_KEY = Deno.env.get("PSB_PRIVATE_KEY")!;
 
 interface VirtualAccountRequest {
   amount: number;
@@ -114,7 +114,7 @@ Deno.serve(async (req: Request) => {
     if (!createAccountResponse.ok) {
       const errorText = await createAccountResponse.text();
       console.error("9PSB API error:", errorText);
-      throw new Error(`Failed to create virtual account: ${errorText}`);
+      throw new Error("Failed to create virtual account");
     }
 
     const accountData = await createAccountResponse.json();
