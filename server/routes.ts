@@ -868,8 +868,31 @@ export function registerRoutes(app: Express) {
     }
   });
 
-  app.post("/api/payments/webhook", async (req, res) => {
+  app.post("/api/payments/psb-webhook", async (req, res) => {
     try {
+      const authHeader = req.headers.authorization;
+      if (!authHeader || !authHeader.startsWith("Basic ")) {
+        console.error("9PSB Webhook: Missing or invalid Authorization header");
+        return res.status(401).json({ success: false, status: "error", code: "401", message: "Unauthorized" });
+      }
+
+      const webhookUsername = process.env.PSB_WEBHOOK_USERNAME;
+      const webhookPassword = process.env.PSB_WEBHOOK_PASSWORD;
+
+      if (!webhookUsername || !webhookPassword) {
+        console.error("9PSB Webhook: Credentials not configured on server");
+        return res.status(500).json({ success: false, status: "error", code: "99", message: "Server configuration error" });
+      }
+
+      const base64Credentials = authHeader.split(" ")[1];
+      const credentials = Buffer.from(base64Credentials, "base64").toString("utf-8");
+      const [username, password] = credentials.split(":");
+
+      if (username !== webhookUsername || password !== webhookPassword) {
+        console.error("9PSB Webhook: Invalid credentials");
+        return res.status(401).json({ success: false, status: "error", code: "401", message: "Invalid credentials" });
+      }
+
       const { 
         accountnumber,
         sessionid 
@@ -881,12 +904,12 @@ export function registerRoutes(app: Express) {
       
       if (!transaction) {
         console.error("Payment transaction not found for account:", accountnumber);
-        return res.json({ code: "00", message: "Transaction not found" });
+        return res.json({ success: true, status: "success", code: "00", message: "Acknowledged" });
       }
 
       if (transaction.status !== "pending") {
         console.log("Transaction already processed:", transaction.reference);
-        return res.json({ code: "00", message: "Already processed" });
+        return res.json({ success: true, status: "success", code: "00", message: "Acknowledged" });
       }
 
       await storage.updatePaymentTransaction(transaction.id, {
@@ -914,14 +937,43 @@ export function registerRoutes(app: Express) {
           source: "9psb",
           status: "completed"
         });
+
+        await checkReferralQualification(transaction.userId, parseFloat(transaction.amount));
       }
 
-      console.log("Payment processed successfully:", transaction.reference);
-      res.json({ code: "00", message: "Success" });
+      console.log("9PSB Payment processed successfully:", transaction.reference);
+      res.json({ success: true, status: "success", code: "00", message: "Acknowledged" });
     } catch (error: any) {
-      console.error("Webhook processing error:", error);
-      res.status(500).json({ code: "99", message: error.message });
+      console.error("9PSB Webhook processing error:", error);
+      res.json({ success: true, status: "success", code: "00", message: "Acknowledged" });
     }
+  });
+
+  app.post("/api/payments/webhook", async (req, res) => {
+    const authHeader = req.headers.authorization;
+    if (!authHeader || !authHeader.startsWith("Basic ")) {
+      console.error("9PSB Webhook (legacy): Missing or invalid Authorization header");
+      return res.status(401).json({ success: false, status: "error", code: "401", message: "Unauthorized" });
+    }
+
+    const webhookUsername = process.env.PSB_WEBHOOK_USERNAME;
+    const webhookPassword = process.env.PSB_WEBHOOK_PASSWORD;
+
+    if (!webhookUsername || !webhookPassword) {
+      console.error("9PSB Webhook (legacy): Credentials not configured");
+      return res.status(500).json({ success: false, status: "error", code: "99", message: "Server configuration error" });
+    }
+
+    const base64Credentials = authHeader.split(" ")[1];
+    const credentials = Buffer.from(base64Credentials, "base64").toString("utf-8");
+    const [username, password] = credentials.split(":");
+
+    if (username !== webhookUsername || password !== webhookPassword) {
+      return res.status(401).json({ success: false, status: "error", code: "401", message: "Invalid credentials" });
+    }
+
+    req.url = "/api/payments/psb-webhook";
+    req.app.handle(req, res);
   });
 
   app.get("/api/payments/status/:reference", async (req, res) => {
