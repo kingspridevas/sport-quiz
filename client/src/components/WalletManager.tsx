@@ -1,6 +1,6 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useAuth } from '../contexts/AuthContext';
-import { Wallet as WalletIcon, Plus, ArrowUpRight, Copy, Clock, CreditCard, Building2 } from 'lucide-react';
+import { Wallet as WalletIcon, Plus, ArrowUpRight, Copy, Clock, CreditCard, Building2, CheckCircle, Loader2 } from 'lucide-react';
 
 interface Wallet {
   id: string;
@@ -30,6 +30,11 @@ export function WalletManager() {
   const [virtualAccount, setVirtualAccount] = useState<VirtualAccount | null>(null);
   const [copied, setCopied] = useState(false);
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('select');
+  const [confirming, setConfirming] = useState(false);
+  const [confirmStatus, setConfirmStatus] = useState<string | null>(null);
+  const [pollingActive, setPollingActive] = useState(false);
+  const pollIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const pollAttemptsRef = useRef(0);
 
   useEffect(() => {
     if (user) {
@@ -100,11 +105,84 @@ export function WalletManager() {
     setTimeout(() => setCopied(false), 2000);
   };
 
+  const stopPolling = () => {
+    if (pollIntervalRef.current) {
+      clearInterval(pollIntervalRef.current);
+      pollIntervalRef.current = null;
+    }
+  };
+
+  const checkPaymentStatus = async (): Promise<boolean> => {
+    if (!virtualAccount) return false;
+
+    try {
+      const response = await fetch('/api/payments/confirm', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ reference: virtualAccount.reference }),
+      });
+
+      if (!response.ok) {
+        setConfirmStatus('error');
+        return false;
+      }
+
+      const result = await response.json();
+
+      if (result.success && (result.status === 'completed' || result.status === 'already_completed')) {
+        setConfirmStatus('success');
+        stopPolling();
+        loadWallet();
+        return true;
+      }
+      return false;
+    } catch (error) {
+      console.error('Error confirming payment:', error);
+      return false;
+    }
+  };
+
+  const handleConfirmPayment = async () => {
+    if (!virtualAccount) return;
+
+    setConfirming(true);
+    setConfirmStatus(null);
+
+    const found = await checkPaymentStatus();
+    if (!found) {
+      setConfirmStatus('pending');
+      setPollingActive(true);
+      pollAttemptsRef.current = 0;
+    }
+
+    setConfirming(false);
+  };
+
+  useEffect(() => {
+    if (pollingActive && virtualAccount) {
+      pollIntervalRef.current = setInterval(async () => {
+        pollAttemptsRef.current += 1;
+        if (pollAttemptsRef.current >= 20) {
+          stopPolling();
+          setPollingActive(false);
+          return;
+        }
+        await checkPaymentStatus();
+      }, 30000);
+    }
+
+    return () => stopPolling();
+  }, [pollingActive, virtualAccount]);
+
   const closePaymentModal = () => {
     setShowFundModal(false);
     setVirtualAccount(null);
     setFundAmount('');
     setPaymentMethod('select');
+    setConfirmStatus(null);
+    setPollingActive(false);
+    stopPolling();
+    pollAttemptsRef.current = 0;
     loadWallet();
   };
 
@@ -342,7 +420,7 @@ export function WalletManager() {
                   <ol className="text-sm text-blue-800 mt-2 space-y-1 list-decimal list-inside">
                     <li>Open your banking app</li>
                     <li>Transfer exactly ₦{virtualAccount.amount.toLocaleString()} to the account above</li>
-                    <li>Your wallet will be credited automatically within seconds</li>
+                    <li>After transferring, click "I've Made Payment" below</li>
                   </ol>
                 </div>
 
@@ -351,6 +429,46 @@ export function WalletManager() {
                     Account number copied to clipboard
                   </div>
                 )}
+
+                {confirmStatus === 'success' ? (
+                  <div className="bg-green-50 border border-green-200 rounded-lg p-4 mb-4 flex items-center gap-3">
+                    <CheckCircle className="text-green-600 flex-shrink-0" size={24} />
+                    <div>
+                      <p className="text-sm font-semibold text-green-900">Payment Confirmed!</p>
+                      <p className="text-xs text-green-800">Your wallet has been credited with ₦{virtualAccount.amount.toLocaleString()}</p>
+                    </div>
+                  </div>
+                ) : confirmStatus === 'pending' ? (
+                  <div className="bg-amber-50 border border-amber-200 rounded-lg p-4 mb-4">
+                    <p className="text-sm text-amber-900 font-semibold">Payment not yet received</p>
+                    <p className="text-xs text-amber-800">If you've already transferred, please wait a moment and try again. It may take a few minutes to process.</p>
+                  </div>
+                ) : confirmStatus === 'error' ? (
+                  <div className="bg-red-50 border border-red-200 rounded-lg p-4 mb-4">
+                    <p className="text-sm text-red-900">Something went wrong. Please try again.</p>
+                  </div>
+                ) : null}
+
+                <button
+                  onClick={handleConfirmPayment}
+                  disabled={confirming || confirmStatus === 'success'}
+                  className="w-full bg-green-600 text-white py-3 rounded-lg font-semibold hover:bg-green-700 transition-colors disabled:opacity-50 flex items-center justify-center gap-2 mb-3"
+                  data-testid="button-confirm-payment"
+                >
+                  {confirming ? (
+                    <>
+                      <Loader2 className="animate-spin" size={20} />
+                      Checking Payment...
+                    </>
+                  ) : confirmStatus === 'success' ? (
+                    <>
+                      <CheckCircle size={20} />
+                      Payment Confirmed
+                    </>
+                  ) : (
+                    "I've Made Payment"
+                  )}
+                </button>
 
                 <button
                   onClick={closePaymentModal}

@@ -2,7 +2,7 @@ import type { Express } from "express";
 import bcrypt from "bcryptjs";
 import { storage } from "./storage.js";
 import { authSignupSchema, authLoginSchema, insertQuestionSchema, insertQuizSessionSchema, insertQuizAnswerSchema } from "../shared/schema.js";
-import { createVirtualAccount, reallocateVirtualAccount, deactivateVirtualAccount, reactivateVirtualAccount } from "./psb-service.js";
+import { createVirtualAccount, reallocateVirtualAccount, deactivateVirtualAccount, reactivateVirtualAccount, confirmPayment } from "./psb-service.js";
 import { getUncachableSendGridClient } from "./sendgrid.js";
 import { initializeTransaction, verifyTransaction } from "./paystack.js";
 import type { Winner } from "../shared/schema.js";
@@ -946,6 +946,79 @@ export function registerRoutes(app: Express) {
     } catch (error: any) {
       console.error("9PSB Webhook processing error:", error);
       res.json({ success: true, status: "success", code: "00", message: "Acknowledged" });
+    }
+  });
+
+  app.post("/api/payments/confirm", async (req, res) => {
+    try {
+      const { reference } = req.body;
+
+      if (!reference) {
+        return res.status(400).json({ error: "Reference is required" });
+      }
+
+      const transaction = await storage.getPaymentTransaction(reference);
+      if (!transaction) {
+        return res.status(404).json({ error: "Transaction not found" });
+      }
+
+      if (transaction.status === "completed") {
+        return res.json({ success: true, status: "already_completed", message: "Payment already processed" });
+      }
+
+      let psbResult;
+      try {
+        psbResult = await confirmPayment(reference, transaction.virtualAccountNumber!);
+        console.log("9PSB confirm payment result:", JSON.stringify(psbResult));
+      } catch (apiError: any) {
+        console.error("9PSB API call failed:", apiError.message);
+        return res.status(502).json({ error: "Unable to reach payment provider. Please try again later." });
+      }
+
+      if (psbResult.parseError) {
+        console.error("9PSB returned non-JSON response:", psbResult.rawResponse);
+        return res.status(502).json({ error: "Payment provider returned an unexpected response. Please try again later." });
+      }
+
+      if (psbResult.code === "00" && Array.isArray(psbResult.transactions) && psbResult.transactions.length > 0) {
+        const psbTx = psbResult.transactions[0];
+
+        await storage.updatePaymentTransaction(transaction.id, {
+          status: "completed",
+          sessionId: psbTx.transaction?.sessionid || null,
+          completedAt: new Date(),
+        });
+
+        const wallet = await storage.getWallet(transaction.userId);
+        if (wallet) {
+          const newBalance = parseFloat(wallet.balance) + parseFloat(transaction.amount);
+          const newTotalFunded = parseFloat(wallet.totalFunded) + parseFloat(transaction.amount);
+
+          await storage.updateWallet(wallet.id, {
+            balance: newBalance.toString(),
+            totalFunded: newTotalFunded.toString(),
+          });
+
+          await storage.createWalletTransaction({
+            walletId: wallet.id,
+            type: "credit",
+            amount: transaction.amount,
+            description: "Wallet funding via bank transfer",
+            reference: transaction.reference,
+            source: "9psb",
+            status: "completed",
+          });
+
+          await checkReferralQualification(transaction.userId, parseFloat(transaction.amount));
+        }
+
+        return res.json({ success: true, status: "completed", message: "Payment confirmed and credited" });
+      }
+
+      return res.json({ success: false, status: "not_found", message: "Payment not yet received by 9PSB" });
+    } catch (error: any) {
+      console.error("Payment confirmation error:", error);
+      res.status(500).json({ error: error.message });
     }
   });
 

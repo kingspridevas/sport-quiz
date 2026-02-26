@@ -124,14 +124,19 @@ export async function createVirtualAccount(
   return data;
 }
 
-export async function confirmPayment(reference: string): Promise<any> {
+export async function confirmPayment(reference: string, accountNumber: string): Promise<any> {
   const token = await authenticate();
 
-  const response = await fetch(`${PSB_BASE_URL}/status/${reference}`, {
-    method: "GET",
+  const response = await fetch(`${PSB_BASE_URL}/confirmpayment`, {
+    method: "POST",
     headers: {
+      "Content-Type": "application/json",
       Authorization: `Bearer ${token}`,
     },
+    body: JSON.stringify({
+      reference,
+      accountnumber: accountNumber,
+    }),
   });
 
   const text = await response.text();
