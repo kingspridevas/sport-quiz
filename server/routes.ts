@@ -893,12 +893,17 @@ export function registerRoutes(app: Express) {
         return res.status(401).json({ success: false, status: "error", code: "401", message: "Invalid credentials" });
       }
 
-      const { 
-        accountnumber,
-        sessionid 
-      } = req.body;
+      console.log("9PSB Webhook received:", JSON.stringify(req.body));
 
-      console.log("9PSB Webhook received:", req.body);
+      // 9PSB sends nested payload: customer.account.number and transaction.sessionid
+      const accountnumber = req.body.customer?.account?.number || req.body.accountnumber;
+      const sessionid = req.body.transaction?.sessionid || req.body.sessionid;
+      const reference = req.body.transaction?.reference || req.body.reference;
+
+      if (!accountnumber) {
+        console.error("9PSB Webhook: Could not extract account number from payload");
+        return res.json({ success: true, status: "success", code: "00", message: "Acknowledged" });
+      }
 
       const transaction = await storage.getPaymentTransactionByAccount(accountnumber);
       
