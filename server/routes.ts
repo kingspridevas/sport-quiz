@@ -889,7 +889,7 @@ export function registerRoutes(app: Express) {
       const [username, password] = credentials.split(":");
 
       if (username !== webhookUsername || password !== webhookPassword) {
-        console.error("9PSB Webhook: Invalid credentials");
+        console.error(`9PSB Webhook: Auth fail. Got user='${username}' len=${username?.length} match=${username===webhookUsername}. Got pass len=${password?.length} match=${password===webhookPassword}. Env user first4='${webhookUsername?.substring(0,4)}' len=${webhookUsername?.length}. Env pass first4='${webhookPassword?.substring(0,4)}' len=${webhookPassword?.length}`);
         return res.status(401).json({ success: false, status: "error", code: "401", message: "Invalid credentials" });
       }
 
