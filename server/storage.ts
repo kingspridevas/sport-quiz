@@ -67,6 +67,8 @@ export interface IStorage {
     startDate?: Date;
     endDate?: Date;
     search?: string;
+    type?: string;
+    status?: string;
   }): Promise<Array<WalletTransaction & { userEmail: string; userFullName: string | null }>>;
   
   // Questions
@@ -223,6 +225,8 @@ export class DbStorage implements IStorage {
     startDate?: Date;
     endDate?: Date;
     search?: string;
+    type?: string;
+    status?: string;
   }) {
     const conditions: any[] = [];
     
@@ -246,6 +250,14 @@ export class DbStorage implements IStorage {
           ilike(profiles.fullName, searchPattern)
         )
       );
+    }
+
+    if (filters?.type && filters.type !== 'all') {
+      conditions.push(eq(walletTransactions.type, filters.type));
+    }
+
+    if (filters?.status && filters.status !== 'all') {
+      conditions.push(eq(walletTransactions.status, filters.status));
     }
 
     const baseQuery = db

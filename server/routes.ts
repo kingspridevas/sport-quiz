@@ -1167,13 +1167,15 @@ export function registerRoutes(app: Express) {
 
   app.get("/api/admin/wallet-transactions", async (req, res) => {
     try {
-      const { source, startDate, endDate, search } = req.query;
+      const { source, startDate, endDate, search, type, status } = req.query;
       
       const filters: {
         source?: string;
         startDate?: Date;
         endDate?: Date;
         search?: string;
+        type?: string;
+        status?: string;
       } = {};
       
       if (source && typeof source === 'string') {
@@ -1192,6 +1194,14 @@ export function registerRoutes(app: Express) {
       
       if (search && typeof search === 'string') {
         filters.search = search;
+      }
+
+      if (type && typeof type === 'string') {
+        filters.type = type;
+      }
+
+      if (status && typeof status === 'string') {
+        filters.status = status;
       }
       
       const transactions = await storage.getAllWalletTransactionsWithUsers(filters);

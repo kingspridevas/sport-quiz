@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { useAuth } from '../contexts/AuthContext';
-import { Plus, Edit2, Trash2, Save, X, Settings, LogOut, Upload, Download, HelpCircle, Gift, FileSpreadsheet, Users, Wallet, CreditCard, Activity, Eye, ChevronLeft, Calculator, Trophy, Check, DollarSign, Share2 } from 'lucide-react';
+import { Plus, Edit2, Trash2, Save, X, Settings, LogOut, Upload, Download, HelpCircle, Gift, FileSpreadsheet, Users, Wallet, CreditCard, Activity, Eye, ChevronLeft, Calculator, Trophy, Check, DollarSign, Share2, Search } from 'lucide-react';
 
 interface Question {
   id: string;
@@ -184,9 +184,15 @@ export function AdminDashboard() {
     source: 'all',
     startDate: '',
     endDate: '',
-    search: ''
+    search: '',
+    type: 'all',
+    status: 'all'
   });
   const [loadingTransactions, setLoadingTransactions] = useState(false);
+  const [userSearch, setUserSearch] = useState('');
+  const [winnerSearch, setWinnerSearch] = useState('');
+  const [walletSearch, setWalletSearch] = useState('');
+  const [paymentSearch, setPaymentSearch] = useState('');
   const [selectedUser, setSelectedUser] = useState<UserDetail | null>(null);
   const [loadingUser, setLoadingUser] = useState(false);
   const [editingUser, setEditingUser] = useState(false);
@@ -434,6 +440,8 @@ export function AdminDashboard() {
       if (f.startDate) params.append('startDate', f.startDate);
       if (f.endDate) params.append('endDate', f.endDate);
       if (f.search) params.append('search', f.search);
+      if (f.type && f.type !== 'all') params.append('type', f.type);
+      if (f.status && f.status !== 'all') params.append('status', f.status);
       
       const response = await fetch(`/api/admin/wallet-transactions?${params.toString()}`);
       if (response.ok) {
@@ -2203,7 +2211,20 @@ OR JSON format:
               </div>
             ) : (
               <div>
-                <h2 className="text-2xl font-bold mb-6">User Management</h2>
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
+                  <h2 className="text-2xl font-bold">User Management</h2>
+                  <div className="relative w-full sm:w-72">
+                    <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+                    <input
+                      type="text"
+                      value={userSearch}
+                      onChange={(e) => setUserSearch(e.target.value)}
+                      placeholder="Search by name, email or phone..."
+                      className="w-full pl-9 pr-4 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none"
+                      data-testid="input-user-search"
+                    />
+                  </div>
+                </div>
                 <div className="bg-white rounded-xl shadow-lg overflow-hidden">
                   <div className="overflow-x-auto">
                     <table className="w-full">
@@ -2217,28 +2238,51 @@ OR JSON format:
                         </tr>
                       </thead>
                       <tbody>
-                        {users.map((user) => (
-                          <tr key={user.id} className="border-b hover:bg-gray-50">
-                            <td className="py-3 px-4">{user.fullName || 'Not set'}</td>
-                            <td className="py-3 px-4">{user.email}</td>
-                            <td className="py-3 px-4">{user.phoneNumber || '-'}</td>
-                            <td className="py-3 px-4">
-                              <span className={`px-2 py-1 rounded text-xs ${user.isAdmin ? 'bg-purple-100 text-purple-700' : 'bg-gray-100 text-gray-700'}`}>
-                                {user.isAdmin ? 'Admin' : 'User'}
-                              </span>
-                            </td>
-                            <td className="py-3 px-4">
-                              <button
-                                onClick={() => loadUserDetails(user.id)}
-                                className="flex items-center gap-1 text-blue-600 hover:text-blue-800"
-                                data-testid={`button-view-user-${user.id}`}
-                              >
-                                <Eye size={16} />
-                                View
-                              </button>
-                            </td>
+                        {users
+                          .filter((user) => {
+                            if (!userSearch.trim()) return true;
+                            const q = userSearch.toLowerCase();
+                            return (
+                              (user.fullName || '').toLowerCase().includes(q) ||
+                              user.email.toLowerCase().includes(q) ||
+                              (user.phoneNumber || '').toLowerCase().includes(q)
+                            );
+                          })
+                          .map((user) => (
+                            <tr key={user.id} className="border-b hover:bg-gray-50">
+                              <td className="py-3 px-4">{user.fullName || 'Not set'}</td>
+                              <td className="py-3 px-4">{user.email}</td>
+                              <td className="py-3 px-4">{user.phoneNumber || '-'}</td>
+                              <td className="py-3 px-4">
+                                <span className={`px-2 py-1 rounded text-xs ${user.isAdmin ? 'bg-purple-100 text-purple-700' : 'bg-gray-100 text-gray-700'}`}>
+                                  {user.isAdmin ? 'Admin' : 'User'}
+                                </span>
+                              </td>
+                              <td className="py-3 px-4">
+                                <button
+                                  onClick={() => loadUserDetails(user.id)}
+                                  className="flex items-center gap-1 text-blue-600 hover:text-blue-800"
+                                  data-testid={`button-view-user-${user.id}`}
+                                >
+                                  <Eye size={16} />
+                                  View
+                                </button>
+                              </td>
+                            </tr>
+                          ))}
+                        {users.filter((user) => {
+                          if (!userSearch.trim()) return true;
+                          const q = userSearch.toLowerCase();
+                          return (
+                            (user.fullName || '').toLowerCase().includes(q) ||
+                            user.email.toLowerCase().includes(q) ||
+                            (user.phoneNumber || '').toLowerCase().includes(q)
+                          );
+                        }).length === 0 && (
+                          <tr>
+                            <td colSpan={5} className="py-8 text-center text-gray-500">No users match your search</td>
                           </tr>
-                        ))}
+                        )}
                       </tbody>
                     </table>
                   </div>
@@ -2250,7 +2294,20 @@ OR JSON format:
 
         {activeTab === 'wallets' && (
           <div>
-            <h2 className="text-2xl font-bold mb-6">Wallet Management</h2>
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
+              <h2 className="text-2xl font-bold">Wallet Management</h2>
+              <div className="relative w-full sm:w-72">
+                <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+                <input
+                  type="text"
+                  value={walletSearch}
+                  onChange={(e) => setWalletSearch(e.target.value)}
+                  placeholder="Search by user name or email..."
+                  className="w-full pl-9 pr-4 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none"
+                  data-testid="input-wallet-search"
+                />
+              </div>
+            </div>
             <div className="bg-white rounded-xl shadow-lg overflow-hidden">
               <div className="overflow-x-auto">
                 <table className="w-full">
@@ -2263,26 +2320,41 @@ OR JSON format:
                     </tr>
                   </thead>
                   <tbody>
-                    {wallets.map((wallet) => (
-                      <tr key={wallet.id} className="border-b hover:bg-gray-50">
-                        <td className="py-3 px-4">{getUserName(wallet.userId)}</td>
-                        <td className="py-3 px-4 font-semibold">N{parseFloat(wallet.balance).toLocaleString()}</td>
-                        <td className="py-3 px-4">N{parseFloat(wallet.totalFunded).toLocaleString()}</td>
-                        <td className="py-3 px-4">
-                          <button
-                            onClick={() => {
-                              loadUserDetails(wallet.userId);
-                              setActiveTab('users');
-                            }}
-                            className="flex items-center gap-1 text-blue-600 hover:text-blue-800"
-                            data-testid={`button-view-wallet-user-${wallet.id}`}
-                          >
-                            <Eye size={16} />
-                            View User
-                          </button>
-                        </td>
+                    {wallets
+                      .filter((wallet) => {
+                        if (!walletSearch.trim()) return true;
+                        const q = walletSearch.toLowerCase();
+                        return getUserName(wallet.userId).toLowerCase().includes(q);
+                      })
+                      .map((wallet) => (
+                        <tr key={wallet.id} className="border-b hover:bg-gray-50">
+                          <td className="py-3 px-4">{getUserName(wallet.userId)}</td>
+                          <td className="py-3 px-4 font-semibold">N{parseFloat(wallet.balance).toLocaleString()}</td>
+                          <td className="py-3 px-4">N{parseFloat(wallet.totalFunded).toLocaleString()}</td>
+                          <td className="py-3 px-4">
+                            <button
+                              onClick={() => {
+                                loadUserDetails(wallet.userId);
+                                setActiveTab('users');
+                              }}
+                              className="flex items-center gap-1 text-blue-600 hover:text-blue-800"
+                              data-testid={`button-view-wallet-user-${wallet.id}`}
+                            >
+                              <Eye size={16} />
+                              View User
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    {wallets.filter((wallet) => {
+                      if (!walletSearch.trim()) return true;
+                      const q = walletSearch.toLowerCase();
+                      return getUserName(wallet.userId).toLowerCase().includes(q);
+                    }).length === 0 && (
+                      <tr>
+                        <td colSpan={4} className="py-8 text-center text-gray-500">No wallets match your search</td>
                       </tr>
-                    ))}
+                    )}
                   </tbody>
                 </table>
               </div>
@@ -2292,7 +2364,20 @@ OR JSON format:
 
         {activeTab === 'payments' && (
           <div>
-            <h2 className="text-2xl font-bold mb-6">Payment Transactions</h2>
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
+              <h2 className="text-2xl font-bold">Payment Transactions</h2>
+              <div className="relative w-full sm:w-80">
+                <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+                <input
+                  type="text"
+                  value={paymentSearch}
+                  onChange={(e) => setPaymentSearch(e.target.value)}
+                  placeholder="Search by user, amount, account, ref, status..."
+                  className="w-full pl-9 pr-4 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none"
+                  data-testid="input-payment-search"
+                />
+              </div>
+            </div>
             <div className="bg-white dark:bg-gray-800 rounded-xl shadow-lg overflow-hidden">
               <div className="overflow-x-auto">
                 <table className="w-full">
@@ -2308,12 +2393,29 @@ OR JSON format:
                     </tr>
                   </thead>
                   <tbody>
-                    {payments.length === 0 ? (
+                    {(() => {
+                      const filteredPayments = payments.filter((payment) => {
+                        if (!paymentSearch.trim()) return true;
+                        const q = paymentSearch.toLowerCase();
+                        const date = new Date(payment.createdAt).toLocaleDateString();
+                        return (
+                          getUserName(payment.userId).toLowerCase().includes(q) ||
+                          String(parseFloat(payment.amount)).includes(q) ||
+                          (payment.virtualAccountNumber || '').toLowerCase().includes(q) ||
+                          (payment.virtualAccountBank || '').toLowerCase().includes(q) ||
+                          (payment.reference || '').toLowerCase().includes(q) ||
+                          (payment.status || '').toLowerCase().includes(q) ||
+                          date.toLowerCase().includes(q)
+                        );
+                      });
+                      return filteredPayments.length === 0 ? (
                       <tr>
-                        <td colSpan={7} className="py-8 text-center text-gray-500">No payments recorded yet</td>
+                        <td colSpan={7} className="py-8 text-center text-gray-500">
+                          {payments.length === 0 ? 'No payments recorded yet' : 'No payments match your search'}
+                        </td>
                       </tr>
                     ) : (
-                      payments.map((payment) => (
+                      filteredPayments.map((payment) => (
                         <tr key={payment.id} className="border-b hover:bg-gray-50 dark:hover:bg-gray-700">
                           <td className="py-3 px-4">{new Date(payment.createdAt).toLocaleDateString()}</td>
                           <td className="py-3 px-4">{getUserName(payment.userId)}</td>
@@ -2366,7 +2468,8 @@ OR JSON format:
                           </td>
                         </tr>
                       ))
-                    )}
+                    );
+                    })()}
                   </tbody>
                 </table>
               </div>
@@ -2379,20 +2482,46 @@ OR JSON format:
             <h2 className="text-2xl font-bold mb-6">Wallet Transactions</h2>
             
             <div className="bg-white dark:bg-gray-800 rounded-xl shadow-lg p-4 mb-6">
-              <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Source</label>
                   <select
                     value={transactionFilters.source}
                     onChange={(e) => handleTransactionFilterChange('source', e.target.value)}
-                    className="w-full border rounded-lg px-3 py-2 dark:bg-gray-700 dark:border-gray-600"
+                    className="w-full border rounded-lg px-3 py-2 dark:bg-gray-700 dark:border-gray-600 text-sm"
                     data-testid="select-transaction-source"
                   >
                     <option value="all">All Sources</option>
                     <option value="paystack">Paystack</option>
-                    <option value="9psb">9PSB (Bank Transfer)</option>
+                    <option value="9psb">9PSB</option>
                     <option value="system">System</option>
                     <option value="admin">Admin</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Type</label>
+                  <select
+                    value={transactionFilters.type}
+                    onChange={(e) => handleTransactionFilterChange('type', e.target.value)}
+                    className="w-full border rounded-lg px-3 py-2 dark:bg-gray-700 dark:border-gray-600 text-sm"
+                    data-testid="select-transaction-type"
+                  >
+                    <option value="all">All Types</option>
+                    <option value="credit">Credit</option>
+                    <option value="debit">Debit</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Status</label>
+                  <select
+                    value={transactionFilters.status}
+                    onChange={(e) => handleTransactionFilterChange('status', e.target.value)}
+                    className="w-full border rounded-lg px-3 py-2 dark:bg-gray-700 dark:border-gray-600 text-sm"
+                    data-testid="select-transaction-status"
+                  >
+                    <option value="all">All Statuses</option>
+                    <option value="completed">Completed</option>
+                    <option value="pending">Pending</option>
                   </select>
                 </div>
                 <div>
@@ -2401,7 +2530,7 @@ OR JSON format:
                     type="date"
                     value={transactionFilters.startDate}
                     onChange={(e) => handleTransactionFilterChange('startDate', e.target.value)}
-                    className="w-full border rounded-lg px-3 py-2 dark:bg-gray-700 dark:border-gray-600"
+                    className="w-full border rounded-lg px-3 py-2 dark:bg-gray-700 dark:border-gray-600 text-sm"
                     data-testid="input-transaction-start-date"
                   />
                 </div>
@@ -2411,20 +2540,23 @@ OR JSON format:
                     type="date"
                     value={transactionFilters.endDate}
                     onChange={(e) => handleTransactionFilterChange('endDate', e.target.value)}
-                    className="w-full border rounded-lg px-3 py-2 dark:bg-gray-700 dark:border-gray-600"
+                    className="w-full border rounded-lg px-3 py-2 dark:bg-gray-700 dark:border-gray-600 text-sm"
                     data-testid="input-transaction-end-date"
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Search (Email/Name)</label>
-                  <input
-                    type="text"
-                    value={transactionFilters.search}
-                    onChange={(e) => handleTransactionFilterChange('search', e.target.value)}
-                    placeholder="Search by email or name..."
-                    className="w-full border rounded-lg px-3 py-2 dark:bg-gray-700 dark:border-gray-600"
-                    data-testid="input-transaction-search"
-                  />
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Search User</label>
+                  <div className="relative">
+                    <Search size={14} className="absolute left-2 top-1/2 -translate-y-1/2 text-gray-400" />
+                    <input
+                      type="text"
+                      value={transactionFilters.search}
+                      onChange={(e) => handleTransactionFilterChange('search', e.target.value)}
+                      placeholder="Name or email..."
+                      className="w-full pl-7 pr-3 py-2 border rounded-lg dark:bg-gray-700 dark:border-gray-600 text-sm"
+                      data-testid="input-transaction-search"
+                    />
+                  </div>
                 </div>
               </div>
             </div>
@@ -2561,12 +2693,23 @@ OR JSON format:
         {activeTab === 'winners' && (
           <div className="bg-white rounded-xl shadow-sm overflow-hidden">
             <div className="p-6">
-              <div className="flex justify-between items-center mb-6">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
                 <h2 className="text-xl font-bold flex items-center gap-2">
                   <Trophy size={24} className="text-yellow-500" />
                   Prize Winners
+                  <span className="text-sm font-normal text-gray-500 ml-1">{winners.length} total</span>
                 </h2>
-                <span className="text-sm text-gray-500">{winners.length} total winners</span>
+                <div className="relative w-full sm:w-72">
+                  <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+                  <input
+                    type="text"
+                    value={winnerSearch}
+                    onChange={(e) => setWinnerSearch(e.target.value)}
+                    placeholder="Search by name, email or phone..."
+                    className="w-full pl-9 pr-4 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none"
+                    data-testid="input-winner-search"
+                  />
+                </div>
               </div>
               <div className="overflow-x-auto">
                 <table className="w-full">
@@ -2582,12 +2725,24 @@ OR JSON format:
                     </tr>
                   </thead>
                   <tbody>
-                    {winners.length === 0 ? (
+                    {(() => {
+                      const filteredWinners = winners.filter((winner) => {
+                        if (!winnerSearch.trim()) return true;
+                        const q = winnerSearch.toLowerCase();
+                        return (
+                          (winner.userFullName || '').toLowerCase().includes(q) ||
+                          (winner.userEmail || '').toLowerCase().includes(q) ||
+                          (winner.userPhone || '').toLowerCase().includes(q)
+                        );
+                      });
+                      return filteredWinners.length === 0 ? (
                       <tr>
-                        <td colSpan={7} className="py-8 text-center text-gray-500">No winners yet</td>
+                        <td colSpan={7} className="py-8 text-center text-gray-500">
+                          {winners.length === 0 ? 'No winners yet' : 'No winners match your search'}
+                        </td>
                       </tr>
                     ) : (
-                      winners.map((winner) => (
+                      filteredWinners.map((winner) => (
                         <tr key={winner.id} className="border-b hover:bg-gray-50">
                           <td className="py-3 px-4">{new Date(winner.createdAt).toLocaleDateString()}</td>
                           <td className="py-3 px-4">
@@ -2665,7 +2820,8 @@ OR JSON format:
                           </td>
                         </tr>
                       ))
-                    )}
+                    );
+                    })()}
                   </tbody>
                 </table>
               </div>
