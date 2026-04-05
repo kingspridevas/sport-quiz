@@ -3,11 +3,9 @@ import bcrypt from "bcryptjs";
 import { storage } from "./storage.js";
 import { authSignupSchema, authLoginSchema, insertQuestionSchema, insertQuizSessionSchema, insertQuizAnswerSchema } from "../shared/schema.js";
 import { createVirtualAccount, reallocateVirtualAccount, deactivateVirtualAccount, reactivateVirtualAccount, confirmPayment } from "./psb-service.js";
-import { getUncachableSendGridClient } from "./sendgrid.js";
+import { sendWinnerEmail } from "./mailer.js";
 import { initializeTransaction, verifyTransaction } from "./paystack.js";
 import type { Winner } from "../shared/schema.js";
-
-const ADMIN_NOTIFICATION_EMAIL = "wazosportswinners@gmail.com";
 
 // Check and process referral qualification when user funds wallet
 async function checkReferralQualification(userId: string, fundedAmount: number) {
@@ -112,34 +110,9 @@ async function processReferralReward(referralId: string, settings?: any) {
 
 async function sendWinnerNotificationEmail(winner: Winner) {
   try {
-    const { client, fromEmail } = await getUncachableSendGridClient();
-    
-    const emailContent = {
-      to: ADMIN_NOTIFICATION_EMAIL,
-      from: fromEmail,
-      subject: `New Winner Alert: ${winner.prizeName}`,
-      html: `
-        <h2>New Prize Winner</h2>
-        <p><strong>Prize:</strong> ${winner.prizeName}</p>
-        <p><strong>Prize Type:</strong> ${winner.prizeType}</p>
-        <p><strong>Prize Value:</strong> ${winner.prizeValue ? `₦${winner.prizeValue}` : 'N/A'}</p>
-        <hr />
-        <h3>Winner Details</h3>
-        <p><strong>Name:</strong> ${winner.userFullName || 'Not provided'}</p>
-        <p><strong>Email:</strong> ${winner.userEmail}</p>
-        <p><strong>Phone:</strong> ${winner.userPhone || 'Not provided'}</p>
-        <h4>Bank Details</h4>
-        <p><strong>Bank:</strong> ${winner.userBankName || 'Not provided'}</p>
-        <p><strong>Account Name:</strong> ${winner.userBankAccountName || 'Not provided'}</p>
-        <p><strong>Account Number:</strong> ${winner.userBankAccountNumber || 'Not provided'}</p>
-        <hr />
-        <p><small>Won at: ${new Date().toLocaleString()}</small></p>
-      `
-    };
-    
-    await client.send(emailContent);
+    await sendWinnerEmail(winner);
     await storage.updateWinner(winner.id, { emailSent: true, emailSentAt: new Date() });
-    console.log(`Winner notification email sent to ${ADMIN_NOTIFICATION_EMAIL}`);
+    console.log(`Winner notification email sent to wazosportswinners@gmail.com`);
   } catch (error) {
     console.error("Error sending winner notification email:", error);
   }
