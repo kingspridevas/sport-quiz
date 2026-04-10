@@ -1,3 +1,5 @@
+import { ProxyAgent, fetch as undiciFetch } from 'undici';
+
 const PSB_BASE_URL = "https://baastest.9psb.com.ng/iva-api/v1/merchant/virtualaccount";
 
 interface AuthResponse {
@@ -44,6 +46,21 @@ interface VirtualAccountResponse {
 let cachedToken: string | null = null;
 let tokenExpiresAt: number = 0;
 
+function getProxyAgent(): ProxyAgent | undefined {
+  const proxyUrl = process.env.HTTPS_PROXY || process.env.HTTP_PROXY;
+  if (!proxyUrl) return undefined;
+  return new ProxyAgent(proxyUrl);
+}
+
+async function psbFetch(url: string, options: RequestInit = {}): Promise<Response> {
+  const dispatcher = getProxyAgent();
+  if (dispatcher) {
+    const res = await undiciFetch(url, { ...options, dispatcher } as any);
+    return res as unknown as Response;
+  }
+  return fetch(url, options);
+}
+
 export async function authenticate(): Promise<string> {
   if (cachedToken && Date.now() < tokenExpiresAt) {
     return cachedToken;
@@ -56,7 +73,7 @@ export async function authenticate(): Promise<string> {
     throw new Error("9PSB API credentials not configured");
   }
 
-  const response = await fetch(`${PSB_BASE_URL}/authenticate`, {
+  const response = await psbFetch(`${PSB_BASE_URL}/authenticate`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -106,7 +123,7 @@ export async function createVirtualAccount(
     },
   };
 
-  const response = await fetch(`${PSB_BASE_URL}/create`, {
+  const response = await psbFetch(`${PSB_BASE_URL}/create`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -127,7 +144,7 @@ export async function createVirtualAccount(
 export async function confirmPayment(reference: string, accountNumber: string): Promise<any> {
   const token = await authenticate();
 
-  const response = await fetch(`${PSB_BASE_URL}/confirmpayment`, {
+  const response = await psbFetch(`${PSB_BASE_URL}/confirmpayment`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -182,7 +199,7 @@ export async function reallocateVirtualAccount(
     },
   };
 
-  const response = await fetch(`${PSB_BASE_URL}/reallocate`, {
+  const response = await psbFetch(`${PSB_BASE_URL}/reallocate`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -203,7 +220,7 @@ export async function reallocateVirtualAccount(
 export async function deactivateVirtualAccount(accountNumber: string): Promise<any> {
   const token = await authenticate();
 
-  const response = await fetch(`${PSB_BASE_URL}/deactivate`, {
+  const response = await psbFetch(`${PSB_BASE_URL}/deactivate`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -230,7 +247,7 @@ export async function deactivateVirtualAccount(accountNumber: string): Promise<a
 export async function reactivateVirtualAccount(accountNumber: string): Promise<any> {
   const token = await authenticate();
 
-  const response = await fetch(`${PSB_BASE_URL}/reactivate`, {
+  const response = await psbFetch(`${PSB_BASE_URL}/reactivate`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
