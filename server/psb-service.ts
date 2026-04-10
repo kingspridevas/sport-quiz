@@ -47,6 +47,19 @@ let cachedToken: string | null = null;
 let tokenExpiresAt: number = 0;
 
 function getProxyAgent(): ProxyAgent | undefined {
+  const host = process.env.PROXY_HOST;
+  const username = process.env.PROXY_USERNAME;
+  const password = process.env.PROXY_PASSWORD;
+
+  if (host && username && password) {
+    const encodedPassword = encodeURIComponent(password);
+    const encodedUsername = encodeURIComponent(username);
+    const url = new URL(host);
+    url.username = encodedUsername;
+    url.password = encodedPassword;
+    return new ProxyAgent(url.toString());
+  }
+
   const proxyUrl = process.env.HTTPS_PROXY || process.env.HTTP_PROXY;
   if (!proxyUrl) return undefined;
   return new ProxyAgent(proxyUrl);
