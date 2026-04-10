@@ -47,22 +47,15 @@ let cachedToken: string | null = null;
 let tokenExpiresAt: number = 0;
 
 function getProxyAgent(): ProxyAgent | undefined {
-  const host = process.env.PROXY_HOST;
   const username = process.env.PROXY_USERNAME;
   const password = process.env.PROXY_PASSWORD;
 
-  if (host && username && password) {
-    const encodedPassword = encodeURIComponent(password);
-    const encodedUsername = encodeURIComponent(username);
-    const url = new URL(host);
-    url.username = encodedUsername;
-    url.password = encodedPassword;
-    return new ProxyAgent(url.toString());
-  }
+  if (!username || !password) return undefined;
 
-  const proxyUrl = process.env.HTTPS_PROXY || process.env.HTTP_PROXY;
-  if (!proxyUrl) return undefined;
-  return new ProxyAgent(proxyUrl);
+  const url = new URL("http://77.237.238.214:3128");
+  url.username = encodeURIComponent(username);
+  url.password = encodeURIComponent(password);
+  return new ProxyAgent(url.toString());
 }
 
 async function psbFetch(url: string, options: RequestInit = {}): Promise<Response> {
