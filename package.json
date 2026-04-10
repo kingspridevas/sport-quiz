@@ -22,7 +22,7 @@
     "@types/pg": "^8.11.10",
     "bcryptjs": "^3.0.3",
     "dotenv": "^16.4.7",
-    "drizzle-orm": "^0.38.3",
+    "drizzle-orm": "^0.45.2",
     "drizzle-zod": "^0.7.0",
     "express": "^4.21.2",
     "lucide-react": "^0.344.0",
@@ -54,6 +54,13 @@
     "vite": "^5.4.15"
   },
   "overrides": {
-    "cross-spawn": "^7.0.5"
+    "cross-spawn": "^7.0.5",
+    "flatted": "^3.4.2",
+    "glob": "^10.5.0",
+    "minimatch": "^9.0.7",
+    "path-to-regexp": "^0.1.13",
+    "picomatch": "^2.3.2",
+    "rollup": "^4.59.0",
+    "axios": "^1.15.0"
   }
 }
