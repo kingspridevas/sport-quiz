@@ -52,10 +52,11 @@ function getProxyAgent(): ProxyAgent | undefined {
 
   if (!username || !password) return undefined;
 
-  const url = new URL("http://77.237.238.214:3128");
-  url.username = username;
-  url.password = password;
-  return new ProxyAgent(url.toString());
+  const token = `Basic ${Buffer.from(`${username}:${password}`).toString('base64')}`;
+  return new ProxyAgent({
+    uri: "http://77.237.238.214:3128",
+    token
+  });
 }
 
 async function psbFetch(url: string, options: RequestInit = {}): Promise<Response> {
