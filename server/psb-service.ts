@@ -47,12 +47,11 @@ let cachedToken: string | null = null;
 let tokenExpiresAt: number = 0;
 
 function getProxyAgent(): ProxyAgent | undefined {
-  const username = process.env.PROXY_USERNAME;
   const password = process.env.PROXY_PASSWORD;
 
-  if (!username || !password) return undefined;
+  if (!password) return undefined;
 
-  const token = `Basic ${Buffer.from(`${username}:${password}`).toString('base64')}`;
+  const token = `Basic ${Buffer.from(`billing:${password}`).toString('base64')}`;
   return new ProxyAgent({
     uri: "http://77.237.238.214:3128",
     token
