@@ -53,8 +53,8 @@ function getProxyAgent(): ProxyAgent | undefined {
   if (!username || !password) return undefined;
 
   const url = new URL("http://77.237.238.214:3128");
-  url.username = encodeURIComponent(username);
-  url.password = encodeURIComponent(password);
+  url.username = username;
+  url.password = password;
   return new ProxyAgent(url.toString());
 }
 
