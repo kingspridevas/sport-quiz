@@ -7,7 +7,7 @@ import {
   confirmPayment 
 } from './psb-service';
 
-const PSB_BASE_URL = "https://baastest.9psb.com.ng/iva-api/v1/merchant/virtualaccount";
+const PSB_BASE_URL = "https://baas.9psb.com.ng/iva-api/v1/merchant/virtualaccount";
 
 interface TestResult {
   scenario: string;
