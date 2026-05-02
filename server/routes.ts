@@ -678,16 +678,17 @@ export function registerRoutes(app: Express) {
   });
 
   // Prizes
-  app.get("/api/prizes", async (_req, res) => {
+  app.get("/api/prizes", requireAuth, async (_req, res) => {
     try {
       const prizes = await storage.getActivePrizes();
-      res.json(prizes);
+      const safePrizes = prizes.map(({ probabilityWeight: _, dailyLimit: __, ...rest }) => rest);
+      res.json(safePrizes);
     } catch (error: any) {
       res.status(500).json({ error: error.message });
     }
   });
 
-  app.get("/api/prizes/all", async (_req, res) => {
+  app.get("/api/prizes/all", requireAdmin, async (_req, res) => {
     try {
       const prizes = await storage.getAllPrizes();
       res.json(prizes);

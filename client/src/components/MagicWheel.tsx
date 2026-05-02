@@ -35,7 +35,7 @@ export function MagicWheel({ onComplete }: MagicWheelProps) {
     
     try {
       const [prizesRes, pointsRes] = await Promise.all([
-        fetch('/api/prizes'),
+        authFetch('/api/prizes'),
         authFetch(`/api/points/${user.id}`)
       ]);
       
