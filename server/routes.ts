@@ -1,4 +1,4 @@
-import type { Express } from "express";
+import type { Express, Request, Response, NextFunction } from "express";
 import bcrypt from "bcryptjs";
 import { storage } from "./storage.js";
 import { authSignupSchema, authLoginSchema, insertQuestionSchema, insertQuizSessionSchema, insertQuizAnswerSchema } from "../shared/schema.js";
@@ -6,6 +6,56 @@ import { createVirtualAccount, reallocateVirtualAccount, deactivateVirtualAccoun
 import { sendWinnerEmail } from "./mailer.js";
 import { initializeTransaction, verifyTransaction } from "./paystack.js";
 import type { Winner } from "../shared/schema.js";
+import { createToken, verifyToken, extractToken, type TokenPayload } from "./auth.js";
+
+declare global {
+  namespace Express {
+    interface Request {
+      authUser?: TokenPayload;
+    }
+  }
+}
+
+function requireAuth(req: Request, res: Response, next: NextFunction) {
+  const token = extractToken(req.headers.authorization);
+  if (!token) return res.status(401).json({ error: "Authentication required" });
+  const payload = verifyToken(token);
+  if (!payload) return res.status(401).json({ error: "Invalid or expired token" });
+  req.authUser = payload;
+  next();
+}
+
+function requireAdmin(req: Request, res: Response, next: NextFunction) {
+  const token = extractToken(req.headers.authorization);
+  if (!token) return res.status(401).json({ error: "Authentication required" });
+  const payload = verifyToken(token);
+  if (!payload) return res.status(401).json({ error: "Invalid or expired token" });
+  if (!payload.isAdmin) return res.status(403).json({ error: "Admin access required" });
+  req.authUser = payload;
+  next();
+}
+
+const SAFE_PROFILE_UPDATE_FIELDS = new Set([
+  "fullName",
+  "sex",
+  "phoneNumber",
+  "location",
+  "photoUrl",
+  "preferredLanguage",
+  "bankName",
+  "bankAccountName",
+  "bankAccountNumber",
+]);
+
+function sanitizeProfileUpdates(body: Record<string, any>): Record<string, any> {
+  const safe: Record<string, any> = {};
+  for (const key of Object.keys(body)) {
+    if (SAFE_PROFILE_UPDATE_FIELDS.has(key)) {
+      safe[key] = body[key];
+    }
+  }
+  return safe;
+}
 
 // Check and process referral qualification when user funds wallet
 async function checkReferralQualification(userId: string, fundedAmount: number) {
@@ -181,7 +231,8 @@ export function registerRoutes(app: Express) {
       }
       
       const { passwordHash: _, ...safeProfile } = profile;
-      res.json({ profile: safeProfile });
+      const token = createToken(profile.id, profile.email, profile.isAdmin);
+      res.json({ profile: safeProfile, token });
     } catch (error: any) {
       res.status(400).json({ error: error.message });
     }
@@ -206,16 +257,20 @@ export function registerRoutes(app: Express) {
       }
       
       const { passwordHash: _, ...safeProfile } = profile;
-      res.json({ profile: safeProfile });
+      const token = createToken(profile.id, profile.email, profile.isAdmin);
+      res.json({ profile: safeProfile, token });
     } catch (error: any) {
       res.status(400).json({ error: error.message });
     }
   });
 
   // Combined dashboard data endpoint for faster loading
-  app.get("/api/dashboard/:userId", async (req, res) => {
+  app.get("/api/dashboard/:userId", requireAuth, async (req, res) => {
     try {
       const userId = req.params.userId;
+      if (req.authUser!.userId !== userId) {
+        return res.status(403).json({ error: "Access denied" });
+      }
       
       // Fetch all dashboard data in parallel
       const [points, sessions, spins, winners, referralStats] = await Promise.all([
@@ -268,33 +323,44 @@ export function registerRoutes(app: Express) {
   });
 
   // Profiles
-  app.get("/api/profile/:id", async (req, res) => {
+  app.get("/api/profile/:id", requireAuth, async (req, res) => {
     try {
+      if (req.authUser!.userId !== req.params.id) {
+        return res.status(403).json({ error: "Access denied" });
+      }
       const profile = await storage.getProfile(req.params.id);
       if (!profile) {
         return res.status(404).json({ error: "Profile not found" });
       }
-      res.json(profile);
+      const { passwordHash: _, ...safeProfile } = profile;
+      res.json(safeProfile);
     } catch (error: any) {
       res.status(500).json({ error: error.message });
     }
   });
 
-  app.patch("/api/profile/:id", async (req, res) => {
+  app.patch("/api/profile/:id", requireAuth, async (req, res) => {
     try {
-      const updates = req.body;
+      if (req.authUser!.userId !== req.params.id) {
+        return res.status(403).json({ error: "Access denied" });
+      }
+      const updates = sanitizeProfileUpdates(req.body);
       const profile = await storage.updateProfile(req.params.id, updates);
       if (!profile) {
         return res.status(404).json({ error: "Profile not found" });
       }
-      res.json(profile);
+      const { passwordHash: _, ...safeProfile } = profile;
+      res.json(safeProfile);
     } catch (error: any) {
       res.status(500).json({ error: error.message });
     }
   });
 
-  app.patch("/api/profile/:id/password", async (req, res) => {
+  app.patch("/api/profile/:id/password", requireAuth, async (req, res) => {
     try {
+      if (req.authUser!.userId !== req.params.id) {
+        return res.status(403).json({ error: "Access denied" });
+      }
       const { currentPassword, newPassword } = req.body;
       
       if (!currentPassword || !newPassword) {
@@ -321,8 +387,11 @@ export function registerRoutes(app: Express) {
   });
 
   // Wallets
-  app.get("/api/wallet/:userId", async (req, res) => {
+  app.get("/api/wallet/:userId", requireAuth, async (req, res) => {
     try {
+      if (req.authUser!.userId !== req.params.userId) {
+        return res.status(403).json({ error: "Access denied" });
+      }
       let wallet = await storage.getWallet(req.params.userId);
       if (!wallet) {
         // Auto-create wallet for existing users who don't have one
@@ -353,8 +422,13 @@ export function registerRoutes(app: Express) {
     }
   });
 
-  app.get("/api/wallet/:walletId/transactions", async (req, res) => {
+  app.get("/api/wallet/:walletId/transactions", requireAuth, async (req, res) => {
     try {
+      const wallet = await storage.getWalletById(req.params.walletId);
+      if (!wallet) return res.status(404).json({ error: "Wallet not found" });
+      if (req.authUser!.userId !== wallet.userId) {
+        return res.status(403).json({ error: "Access denied" });
+      }
       const transactions = await storage.getWalletTransactions(req.params.walletId);
       res.json(transactions);
     } catch (error: any) {
@@ -382,7 +456,7 @@ export function registerRoutes(app: Express) {
     }
   });
 
-  app.post("/api/questions", async (req, res) => {
+  app.post("/api/questions", requireAdmin, async (req, res) => {
     try {
       const validatedData = insertQuestionSchema.parse(req.body);
       const question = await storage.createQuestion(validatedData);
@@ -392,7 +466,7 @@ export function registerRoutes(app: Express) {
     }
   });
 
-  app.patch("/api/questions/:id", async (req, res) => {
+  app.patch("/api/questions/:id", requireAdmin, async (req, res) => {
     try {
       const updates = req.body;
       const question = await storage.updateQuestion(req.params.id, updates);
@@ -405,7 +479,7 @@ export function registerRoutes(app: Express) {
     }
   });
 
-  app.delete("/api/questions/:id", async (req, res) => {
+  app.delete("/api/questions/:id", requireAdmin, async (req, res) => {
     try {
       await storage.deleteQuestion(req.params.id);
       res.json({ success: true });
@@ -417,9 +491,13 @@ export function registerRoutes(app: Express) {
   // Quiz Sessions
   const QUIZ_COST = 100;
   
-  app.post("/api/quiz/start", async (req, res) => {
+  app.post("/api/quiz/start", requireAuth, async (req, res) => {
     try {
       const validatedData = insertQuizSessionSchema.parse(req.body);
+
+      if (req.authUser!.userId !== validatedData.userId) {
+        return res.status(403).json({ error: "Access denied" });
+      }
       
       // Check and deduct wallet balance
       const wallet = await storage.getWallet(validatedData.userId);
@@ -463,8 +541,11 @@ export function registerRoutes(app: Express) {
     }
   });
 
-  app.get("/api/quiz/user/:userId", async (req, res) => {
+  app.get("/api/quiz/user/:userId", requireAuth, async (req, res) => {
     try {
+      if (req.authUser!.userId !== req.params.userId) {
+        return res.status(403).json({ error: "Access denied" });
+      }
       const sessions = await storage.getUserQuizSessions(req.params.userId);
       res.json(sessions);
     } catch (error: any) {
@@ -472,7 +553,7 @@ export function registerRoutes(app: Express) {
     }
   });
 
-  app.post("/api/quiz/answer", async (req, res) => {
+  app.post("/api/quiz/answer", requireAuth, async (req, res) => {
     try {
       const validatedData = insertQuizAnswerSchema.parse(req.body);
       const answer = await storage.createQuizAnswer(validatedData);
@@ -482,7 +563,7 @@ export function registerRoutes(app: Express) {
     }
   });
 
-  app.patch("/api/quiz/session/:id", async (req, res) => {
+  app.patch("/api/quiz/session/:id", requireAuth, async (req, res) => {
     try {
       const updates = req.body;
       
@@ -515,8 +596,11 @@ export function registerRoutes(app: Express) {
   });
 
   // User Points
-  app.get("/api/points/:userId", async (req, res) => {
+  app.get("/api/points/:userId", requireAuth, async (req, res) => {
     try {
+      if (req.authUser!.userId !== req.params.userId) {
+        return res.status(403).json({ error: "Access denied" });
+      }
       const points = await storage.getUserPoints(req.params.userId);
       if (!points) {
         return res.status(404).json({ error: "Points not found" });
@@ -546,7 +630,7 @@ export function registerRoutes(app: Express) {
     }
   });
 
-  app.post("/api/prizes", async (req, res) => {
+  app.post("/api/prizes", requireAdmin, async (req, res) => {
     try {
       const prize = await storage.createPrize(req.body);
       res.json(prize);
@@ -555,7 +639,7 @@ export function registerRoutes(app: Express) {
     }
   });
 
-  app.patch("/api/prizes/:id", async (req, res) => {
+  app.patch("/api/prizes/:id", requireAdmin, async (req, res) => {
     try {
       const updates = req.body;
       const prize = await storage.updatePrize(req.params.id, updates);
@@ -568,7 +652,7 @@ export function registerRoutes(app: Express) {
     }
   });
 
-  app.delete("/api/prizes/:id", async (req, res) => {
+  app.delete("/api/prizes/:id", requireAdmin, async (req, res) => {
     try {
       await storage.deletePrize(req.params.id);
       res.json({ success: true });
@@ -578,9 +662,13 @@ export function registerRoutes(app: Express) {
   });
 
   // Wheel Spins
-  app.post("/api/wheel/spin", async (req, res) => {
+  app.post("/api/wheel/spin", requireAuth, async (req, res) => {
     try {
       const { userId } = req.body;
+
+      if (req.authUser!.userId !== userId) {
+        return res.status(403).json({ error: "Access denied" });
+      }
       const POINTS_REQUIRED = 5;
       
       // Check user points
@@ -739,8 +827,11 @@ export function registerRoutes(app: Express) {
     }
   });
 
-  app.get("/api/wheel/spins/:userId", async (req, res) => {
+  app.get("/api/wheel/spins/:userId", requireAuth, async (req, res) => {
     try {
+      if (req.authUser!.userId !== req.params.userId) {
+        return res.status(403).json({ error: "Access denied" });
+      }
       const spins = await storage.getUserWheelSpins(req.params.userId);
       res.json(spins);
     } catch (error: any) {
@@ -749,8 +840,11 @@ export function registerRoutes(app: Express) {
   });
 
   // Payment Transactions
-  app.get("/api/payments/:userId", async (req, res) => {
+  app.get("/api/payments/:userId", requireAuth, async (req, res) => {
     try {
+      if (req.authUser!.userId !== req.params.userId) {
+        return res.status(403).json({ error: "Access denied" });
+      }
       const transactions = await storage.getUserPaymentTransactions(req.params.userId);
       res.json(transactions);
     } catch (error: any) {
@@ -758,9 +852,13 @@ export function registerRoutes(app: Express) {
     }
   });
 
-  app.post("/api/payments/create-virtual-account", async (req, res) => {
+  app.post("/api/payments/create-virtual-account", requireAuth, async (req, res) => {
     try {
       const { amount, userId, userName } = req.body;
+
+      if (req.authUser!.userId !== userId) {
+        return res.status(403).json({ error: "Access denied" });
+      }
       
       if (!amount || !userId || !userName) {
         return res.status(400).json({ error: "Missing required fields: amount, userId, userName" });
@@ -927,7 +1025,7 @@ export function registerRoutes(app: Express) {
     }
   });
 
-  app.post("/api/payments/confirm", async (req, res) => {
+  app.post("/api/payments/confirm", requireAuth, async (req, res) => {
     try {
       const { reference } = req.body;
 
@@ -1027,11 +1125,14 @@ export function registerRoutes(app: Express) {
     req.app.handle(req, res);
   });
 
-  app.get("/api/payments/status/:reference", async (req, res) => {
+  app.get("/api/payments/status/:reference", requireAuth, async (req, res) => {
     try {
       const transaction = await storage.getPaymentTransaction(req.params.reference);
       if (!transaction) {
         return res.status(404).json({ error: "Transaction not found" });
+      }
+      if (req.authUser!.userId !== transaction.userId && !req.authUser!.isAdmin) {
+        return res.status(403).json({ error: "Access denied" });
       }
       res.json(transaction);
     } catch (error: any) {
@@ -1040,7 +1141,7 @@ export function registerRoutes(app: Express) {
   });
 
   // Admin Routes
-  app.get("/api/admin/stats", async (req, res) => {
+  app.get("/api/admin/stats", requireAdmin, async (req, res) => {
     try {
       const stats = await storage.getAdminStats();
       res.json(stats);
@@ -1049,7 +1150,7 @@ export function registerRoutes(app: Express) {
     }
   });
 
-  app.get("/api/admin/users", async (req, res) => {
+  app.get("/api/admin/users", requireAdmin, async (req, res) => {
     try {
       const profiles = await storage.getAllProfiles();
       const safeProfiles = profiles.map(({ passwordHash, ...rest }) => rest);
@@ -1059,7 +1160,7 @@ export function registerRoutes(app: Express) {
     }
   });
 
-  app.get("/api/admin/users/:id", async (req, res) => {
+  app.get("/api/admin/users/:id", requireAdmin, async (req, res) => {
     try {
       const profile = await storage.getProfile(req.params.id);
       if (!profile) {
@@ -1093,7 +1194,7 @@ export function registerRoutes(app: Express) {
     }
   });
 
-  app.patch("/api/admin/users/:id", async (req, res) => {
+  app.patch("/api/admin/users/:id", requireAdmin, async (req, res) => {
     try {
       const updates = req.body;
       const profile = await storage.updateProfile(req.params.id, updates);
@@ -1107,7 +1208,7 @@ export function registerRoutes(app: Express) {
     }
   });
 
-  app.get("/api/admin/wallets", async (req, res) => {
+  app.get("/api/admin/wallets", requireAdmin, async (req, res) => {
     try {
       const wallets = await storage.getAllWallets();
       res.json(wallets);
@@ -1116,7 +1217,7 @@ export function registerRoutes(app: Express) {
     }
   });
 
-  app.patch("/api/admin/wallets/:id", async (req, res) => {
+  app.patch("/api/admin/wallets/:id", requireAdmin, async (req, res) => {
     try {
       const updates = req.body;
       const wallet = await storage.updateWallet(req.params.id, updates);
@@ -1129,7 +1230,7 @@ export function registerRoutes(app: Express) {
     }
   });
 
-  app.get("/api/admin/payments", async (req, res) => {
+  app.get("/api/admin/payments", requireAdmin, async (req, res) => {
     try {
       const payments = await storage.getAllPaymentTransactions();
       res.json(payments);
@@ -1138,7 +1239,7 @@ export function registerRoutes(app: Express) {
     }
   });
 
-  app.get("/api/admin/wallet-transactions", async (req, res) => {
+  app.get("/api/admin/wallet-transactions", requireAdmin, async (req, res) => {
     try {
       const { source, startDate, endDate, search, type, status } = req.query;
       
@@ -1184,7 +1285,7 @@ export function registerRoutes(app: Express) {
     }
   });
 
-  app.post("/api/admin/virtual-accounts/deactivate", async (req, res) => {
+  app.post("/api/admin/virtual-accounts/deactivate", requireAdmin, async (req, res) => {
     try {
       const { accountNumber, transactionId } = req.body;
       
@@ -1205,7 +1306,7 @@ export function registerRoutes(app: Express) {
     }
   });
 
-  app.post("/api/admin/virtual-accounts/reactivate", async (req, res) => {
+  app.post("/api/admin/virtual-accounts/reactivate", requireAdmin, async (req, res) => {
     try {
       const { accountNumber, transactionId } = req.body;
       
@@ -1226,7 +1327,7 @@ export function registerRoutes(app: Express) {
     }
   });
 
-  app.get("/api/admin/quiz-sessions", async (req, res) => {
+  app.get("/api/admin/quiz-sessions", requireAdmin, async (req, res) => {
     try {
       const sessions = await storage.getAllQuizSessions();
       // Add passed field based on correctAnswers >= 3
@@ -1241,7 +1342,7 @@ export function registerRoutes(app: Express) {
     }
   });
 
-  app.get("/api/admin/quiz-sessions/:userId", async (req, res) => {
+  app.get("/api/admin/quiz-sessions/:userId", requireAdmin, async (req, res) => {
     try {
       const sessions = await storage.getUserQuizSessions(req.params.userId);
       // Add passed field based on correctAnswers >= 3
@@ -1256,7 +1357,7 @@ export function registerRoutes(app: Express) {
     }
   });
 
-  app.patch("/api/admin/points/:userId", async (req, res) => {
+  app.patch("/api/admin/points/:userId", requireAdmin, async (req, res) => {
     try {
       const { points } = req.body;
       const userPoints = await storage.getUserPoints(req.params.userId);
@@ -1294,7 +1395,7 @@ export function registerRoutes(app: Express) {
   });
 
   // Winners Management
-  app.get("/api/admin/winners", async (_req, res) => {
+  app.get("/api/admin/winners", requireAdmin, async (_req, res) => {
     try {
       const allWinners = await storage.getAllWinners();
       res.json(allWinners);
@@ -1303,7 +1404,7 @@ export function registerRoutes(app: Express) {
     }
   });
 
-  app.get("/api/admin/winners/:id", async (req, res) => {
+  app.get("/api/admin/winners/:id", requireAdmin, async (req, res) => {
     try {
       const winner = await storage.getWinner(req.params.id);
       if (!winner) {
@@ -1315,7 +1416,7 @@ export function registerRoutes(app: Express) {
     }
   });
 
-  app.patch("/api/admin/winners/:id", async (req, res) => {
+  app.patch("/api/admin/winners/:id", requireAdmin, async (req, res) => {
     try {
       const updates = req.body;
       const winner = await storage.updateWinner(req.params.id, updates);
@@ -1328,7 +1429,7 @@ export function registerRoutes(app: Express) {
     }
   });
 
-  app.post("/api/admin/winners/:id/process", async (req, res) => {
+  app.post("/api/admin/winners/:id/process", requireAdmin, async (req, res) => {
     try {
       const winner = await storage.getWinner(req.params.id);
       if (!winner) {
@@ -1349,7 +1450,7 @@ export function registerRoutes(app: Express) {
     }
   });
 
-  app.post("/api/admin/winners/:id/pay", async (req, res) => {
+  app.post("/api/admin/winners/:id/pay", requireAdmin, async (req, res) => {
     try {
       const winner = await storage.getWinner(req.params.id);
       if (!winner) {
@@ -1371,9 +1472,13 @@ export function registerRoutes(app: Express) {
   });
 
   // Paystack Payment Integration
-  app.post("/api/paystack/initialize", async (req, res) => {
+  app.post("/api/paystack/initialize", requireAuth, async (req, res) => {
     try {
       const { userId, amount, email } = req.body;
+
+      if (req.authUser!.userId !== userId) {
+        return res.status(403).json({ error: "Access denied" });
+      }
       
       if (!userId || !amount || !email) {
         return res.status(400).json({ error: "userId, amount, and email are required" });
@@ -1527,9 +1632,12 @@ export function registerRoutes(app: Express) {
   // ============== REFERRAL ROUTES ==============
 
   // Get user's referral stats and code
-  app.get("/api/referral/stats/:userId", async (req, res) => {
+  app.get("/api/referral/stats/:userId", requireAuth, async (req, res) => {
     try {
       const { userId } = req.params;
+      if (req.authUser!.userId !== userId) {
+        return res.status(403).json({ error: "Access denied" });
+      }
       let profile = await storage.getProfile(userId);
       
       if (!profile) {
@@ -1589,7 +1697,7 @@ export function registerRoutes(app: Express) {
   });
 
   // Get referral settings (admin)
-  app.get("/api/admin/referral/settings", async (req, res) => {
+  app.get("/api/admin/referral/settings", requireAdmin, async (req, res) => {
     try {
       let settings = await storage.getReferralSettings();
       if (!settings) {
@@ -1607,7 +1715,7 @@ export function registerRoutes(app: Express) {
   });
 
   // Update referral settings (admin)
-  app.patch("/api/admin/referral/settings/:id", async (req, res) => {
+  app.patch("/api/admin/referral/settings/:id", requireAdmin, async (req, res) => {
     try {
       const { id } = req.params;
       const updates = req.body;
@@ -1622,7 +1730,7 @@ export function registerRoutes(app: Express) {
   });
 
   // Get all referrals (admin)
-  app.get("/api/admin/referrals", async (req, res) => {
+  app.get("/api/admin/referrals", requireAdmin, async (req, res) => {
     try {
       const { status } = req.query;
       let referrals;
@@ -1642,7 +1750,7 @@ export function registerRoutes(app: Express) {
   });
 
   // Manually reward a referral (admin)
-  app.post("/api/admin/referral/:id/reward", async (req, res) => {
+  app.post("/api/admin/referral/:id/reward", requireAdmin, async (req, res) => {
     try {
       const { id } = req.params;
       const referral = await storage.getReferral(id);
@@ -1669,7 +1777,7 @@ export function registerRoutes(app: Express) {
   });
 
   // Reject a referral (admin)
-  app.post("/api/admin/referral/:id/reject", async (req, res) => {
+  app.post("/api/admin/referral/:id/reject", requireAdmin, async (req, res) => {
     try {
       const { id } = req.params;
       const referral = await storage.getReferral(id);

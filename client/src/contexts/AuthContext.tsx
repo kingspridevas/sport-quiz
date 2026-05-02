@@ -27,6 +27,7 @@ interface AuthContextType {
   user: AuthUser | null;
   profile: Profile | null;
   loading: boolean;
+  token: string | null;
   signUp: (
     email: string,
     password: string,
@@ -34,7 +35,8 @@ interface AuthContextType {
     sex: string,
     phoneNumber: string,
     location: string,
-    photo: File | null
+    photo: File | null,
+    referralCode?: string
   ) => Promise<void>;
   signIn: (email: string, password: string) => Promise<void>;
   signOut: () => Promise<void>;
@@ -47,16 +49,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<AuthUser | null>(null);
   const [profile, setProfile] = useState<Profile | null>(null);
   const [loading, setLoading] = useState(true);
+  const [token, setToken] = useState<string | null>(null);
 
   useEffect(() => {
     const storedUser = localStorage.getItem('auth_user');
-    if (storedUser) {
+    const storedToken = localStorage.getItem('auth_token');
+    if (storedUser && storedToken) {
       try {
         const userData = JSON.parse(storedUser);
         setUser(userData);
-        loadProfile(userData.id);
+        setToken(storedToken);
+        loadProfile(userData.id, storedToken);
       } catch {
         localStorage.removeItem('auth_user');
+        localStorage.removeItem('auth_token');
         setLoading(false);
       }
     } else {
@@ -64,12 +70,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
-  const loadProfile = async (userId: string) => {
+  const loadProfile = async (userId: string, authToken: string) => {
     try {
-      const response = await fetch(`/api/profile/${userId}`);
+      const response = await fetch(`/api/profile/${userId}`, {
+        headers: { Authorization: `Bearer ${authToken}` },
+      });
       if (response.ok) {
         const data = await response.json();
         setProfile(data);
+      } else {
+        localStorage.removeItem('auth_user');
+        localStorage.removeItem('auth_token');
+        setUser(null);
+        setToken(null);
       }
     } catch (error) {
       console.error('Error loading profile:', error);
@@ -109,7 +122,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const data = await response.json();
     const userData = { id: data.profile.id, email: data.profile.email };
     localStorage.setItem('auth_user', JSON.stringify(userData));
+    localStorage.setItem('auth_token', data.token);
     setUser(userData);
+    setToken(data.token);
     setProfile(data.profile);
   };
 
@@ -128,19 +143,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const data = await response.json();
     const userData = { id: data.profile.id, email: data.profile.email };
     localStorage.setItem('auth_user', JSON.stringify(userData));
+    localStorage.setItem('auth_token', data.token);
     setUser(userData);
+    setToken(data.token);
     setProfile(data.profile);
   };
 
   const signOut = async () => {
     localStorage.removeItem('auth_user');
+    localStorage.removeItem('auth_token');
     setUser(null);
+    setToken(null);
     setProfile(null);
   };
 
   const refreshProfile = async () => {
-    if (user) {
-      await loadProfile(user.id);
+    if (user && token) {
+      await loadProfile(user.id, token);
     }
   };
 
@@ -148,6 +167,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     user,
     profile,
     loading,
+    token,
     signUp,
     signIn,
     signOut,

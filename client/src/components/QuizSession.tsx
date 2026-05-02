@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useAuth } from '../contexts/AuthContext';
+import { authFetch } from '../lib/authFetch';
 import { CheckCircle, XCircle, Trophy, Clock, Globe } from 'lucide-react';
 
 const QUIZ_COST = 100;
@@ -85,7 +86,7 @@ export function QuizSession({ onComplete }: QuizSessionProps) {
     setSelectedLanguage(lang);
     if (user) {
       try {
-        await fetch(`/api/profile/${user.id}`, {
+        await authFetch(`/api/profile/${user.id}`, {
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ preferredLanguage: lang }),
@@ -142,7 +143,7 @@ export function QuizSession({ onComplete }: QuizSessionProps) {
     const newCorrectCount = isCorrect ? correctCount + 1 : correctCount;
 
     try {
-      await fetch('/api/quiz/answer', {
+      await authFetch('/api/quiz/answer', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -177,7 +178,7 @@ export function QuizSession({ onComplete }: QuizSessionProps) {
     setLoading(true);
 
     try {
-      const walletRes = await fetch(`/api/wallet/${user.id}`);
+      const walletRes = await authFetch(`/api/wallet/${user.id}`);
       if (!walletRes.ok) {
         alert('Could not load wallet. Please try again.');
         setLoading(false);
@@ -191,7 +192,7 @@ export function QuizSession({ onComplete }: QuizSessionProps) {
         return;
       }
 
-      const questionsRes = await fetch(`/api/questions?limit=20`);
+      const questionsRes = await authFetch(`/api/questions?limit=20`);
       if (!questionsRes.ok) {
         alert('Could not load questions. Please try again.');
         setLoading(false);
@@ -208,7 +209,7 @@ export function QuizSession({ onComplete }: QuizSessionProps) {
       const shuffled = [...allQuestions].sort(() => Math.random() - 0.5);
       const selectedQuestions = shuffled.slice(0, QUESTIONS_PER_SESSION);
 
-      const sessionRes = await fetch('/api/quiz/start', {
+      const sessionRes = await authFetch('/api/quiz/start', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -246,7 +247,7 @@ export function QuizSession({ onComplete }: QuizSessionProps) {
     const newCorrectCount = isCorrect ? correctCount + 1 : correctCount;
 
     try {
-      await fetch('/api/quiz/answer', {
+      await authFetch('/api/quiz/answer', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -281,7 +282,7 @@ export function QuizSession({ onComplete }: QuizSessionProps) {
     const pointsEarned = finalCorrectCount >= MIN_CORRECT_ANSWERS ? 1 : 0;
 
     try {
-      await fetch(`/api/quiz/session/${currentSession.id}`, {
+      await authFetch(`/api/quiz/session/${currentSession.id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

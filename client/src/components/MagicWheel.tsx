@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useAuth } from '../contexts/AuthContext';
+import { authFetch } from '../lib/authFetch';
 import { Sparkles, Gift, AlertCircle, Loader2 } from 'lucide-react';
 import { apiRequest } from '@/lib/queryClient';
 import type { PrizeConfig, UserPoints } from '@shared/schema';
@@ -35,7 +36,7 @@ export function MagicWheel({ onComplete }: MagicWheelProps) {
     try {
       const [prizesRes, pointsRes] = await Promise.all([
         fetch('/api/prizes'),
-        fetch(`/api/points/${user.id}`)
+        authFetch(`/api/points/${user.id}`)
       ]);
       
       if (prizesRes.ok) {

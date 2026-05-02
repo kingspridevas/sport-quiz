@@ -1,12 +1,22 @@
 import { QueryClient } from "@tanstack/react-query";
 
+function getAuthToken(): string | null {
+  return localStorage.getItem('auth_token');
+}
+
 async function customFetch(url: string, options?: RequestInit) {
+  const token = getAuthToken();
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+    ...(options?.headers as Record<string, string> || {}),
+  };
+  if (token) {
+    headers["Authorization"] = `Bearer ${token}`;
+  }
+
   const response = await fetch(url, {
     ...options,
-    headers: {
-      "Content-Type": "application/json",
-      ...options?.headers,
-    },
+    headers,
     credentials: "include",
   });
 

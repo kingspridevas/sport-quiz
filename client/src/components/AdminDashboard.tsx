@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { useAuth } from '../contexts/AuthContext';
+import { authFetch } from '../lib/authFetch';
 import { Plus, Edit2, Trash2, Save, X, Settings, LogOut, Upload, Download, HelpCircle, Gift, FileSpreadsheet, Users, Wallet, CreditCard, Activity, Eye, ChevronLeft, Calculator, Trophy, Check, DollarSign, Share2, Search } from 'lucide-react';
 
 interface Question {
@@ -264,7 +265,7 @@ export function AdminDashboard() {
 
   const loadQuestions = async () => {
     try {
-      const response = await fetch('/api/questions/all');
+      const response = await authFetch('/api/questions/all');
       if (response.ok) {
         const data = await response.json();
         setQuestions(data);
@@ -276,7 +277,7 @@ export function AdminDashboard() {
 
   const loadPrizes = async () => {
     try {
-      const response = await fetch('/api/prizes/all');
+      const response = await authFetch('/api/prizes/all');
       if (response.ok) {
         const data = await response.json();
         setPrizes(data);
@@ -288,7 +289,7 @@ export function AdminDashboard() {
 
   const loadStats = async () => {
     try {
-      const response = await fetch('/api/admin/stats');
+      const response = await authFetch('/api/admin/stats');
       if (response.ok) {
         const data = await response.json();
         setStats(data);
@@ -300,7 +301,7 @@ export function AdminDashboard() {
 
   const loadUsers = async () => {
     try {
-      const response = await fetch('/api/admin/users');
+      const response = await authFetch('/api/admin/users');
       if (response.ok) {
         const data = await response.json();
         setUsers(data);
@@ -312,7 +313,7 @@ export function AdminDashboard() {
 
   const loadWallets = async () => {
     try {
-      const response = await fetch('/api/admin/wallets');
+      const response = await authFetch('/api/admin/wallets');
       if (response.ok) {
         const data = await response.json();
         setWallets(data);
@@ -324,7 +325,7 @@ export function AdminDashboard() {
 
   const loadPayments = async () => {
     try {
-      const response = await fetch('/api/admin/payments');
+      const response = await authFetch('/api/admin/payments');
       if (response.ok) {
         const data = await response.json();
         setPayments(data);
@@ -346,7 +347,7 @@ export function AdminDashboard() {
     
     setProcessingAccount(payment.id);
     try {
-      const response = await fetch('/api/admin/virtual-accounts/deactivate', {
+      const response = await authFetch('/api/admin/virtual-accounts/deactivate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -382,7 +383,7 @@ export function AdminDashboard() {
     
     setProcessingAccount(payment.id);
     try {
-      const response = await fetch('/api/admin/virtual-accounts/reactivate', {
+      const response = await authFetch('/api/admin/virtual-accounts/reactivate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -408,7 +409,7 @@ export function AdminDashboard() {
 
   const loadQuizSessions = async () => {
     try {
-      const response = await fetch('/api/admin/quiz-sessions');
+      const response = await authFetch('/api/admin/quiz-sessions');
       if (response.ok) {
         const data = await response.json();
         setQuizSessions(data);
@@ -420,7 +421,7 @@ export function AdminDashboard() {
 
   const loadWinners = async () => {
     try {
-      const response = await fetch('/api/admin/winners');
+      const response = await authFetch('/api/admin/winners');
       if (response.ok) {
         const data = await response.json();
         setWinners(data);
@@ -443,7 +444,7 @@ export function AdminDashboard() {
       if (f.type && f.type !== 'all') params.append('type', f.type);
       if (f.status && f.status !== 'all') params.append('status', f.status);
       
-      const response = await fetch(`/api/admin/wallet-transactions?${params.toString()}`);
+      const response = await authFetch(`/api/admin/wallet-transactions?${params.toString()}`);
       if (response.ok) {
         const data = await response.json();
         setWalletTransactions(data);
@@ -464,7 +465,7 @@ export function AdminDashboard() {
   const handleProcessWinner = async (winnerId: string) => {
     setProcessingWinner(winnerId);
     try {
-      const response = await fetch(`/api/admin/winners/${winnerId}/process`, {
+      const response = await authFetch(`/api/admin/winners/${winnerId}/process`, {
         method: 'POST'
       });
       if (response.ok) {
@@ -480,7 +481,7 @@ export function AdminDashboard() {
   const handlePayWinner = async (winnerId: string) => {
     setProcessingWinner(winnerId);
     try {
-      const response = await fetch(`/api/admin/winners/${winnerId}/pay`, {
+      const response = await authFetch(`/api/admin/winners/${winnerId}/pay`, {
         method: 'POST'
       });
       if (response.ok) {
@@ -499,7 +500,7 @@ export function AdminDashboard() {
       const url = status && status !== 'all' 
         ? `/api/admin/referrals?status=${status}` 
         : '/api/admin/referrals';
-      const response = await fetch(url);
+      const response = await authFetch(url);
       if (response.ok) {
         const data = await response.json();
         setReferrals(data);
@@ -513,7 +514,7 @@ export function AdminDashboard() {
 
   const loadReferralSettings = async () => {
     try {
-      const response = await fetch('/api/admin/referral/settings');
+      const response = await authFetch('/api/admin/referral/settings');
       if (response.ok) {
         const data = await response.json();
         setReferralSettings(data);
@@ -533,7 +534,7 @@ export function AdminDashboard() {
     if (!referralSettings) return;
     
     try {
-      const response = await fetch(`/api/admin/referral/settings/${referralSettings.id}`, {
+      const response = await authFetch(`/api/admin/referral/settings/${referralSettings.id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(referralSettingsForm),
@@ -556,7 +557,7 @@ export function AdminDashboard() {
   const handleRewardReferral = async (referralId: string) => {
     setProcessingReferral(referralId);
     try {
-      const response = await fetch(`/api/admin/referral/${referralId}/reward`, {
+      const response = await authFetch(`/api/admin/referral/${referralId}/reward`, {
         method: 'POST'
       });
       if (response.ok) {
@@ -579,7 +580,7 @@ export function AdminDashboard() {
     
     setProcessingReferral(referralId);
     try {
-      const response = await fetch(`/api/admin/referral/${referralId}/reject`, {
+      const response = await authFetch(`/api/admin/referral/${referralId}/reject`, {
         method: 'POST'
       });
       if (response.ok) {
@@ -600,7 +601,7 @@ export function AdminDashboard() {
   const loadUserDetails = async (userId: string) => {
     setLoadingUser(true);
     try {
-      const response = await fetch(`/api/admin/users/${userId}`);
+      const response = await authFetch(`/api/admin/users/${userId}`);
       if (response.ok) {
         const data = await response.json();
         setSelectedUser(data);
@@ -636,7 +637,7 @@ export function AdminDashboard() {
   const handleSaveUser = async () => {
     if (!selectedUser) return;
     try {
-      const profileResponse = await fetch(`/api/admin/users/${selectedUser.profile.id}`, {
+      const profileResponse = await authFetch(`/api/admin/users/${selectedUser.profile.id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -652,7 +653,7 @@ export function AdminDashboard() {
       }
 
       if (selectedUser.wallet && userEditForm.walletBalance !== selectedUser.wallet.balance) {
-        await fetch(`/api/admin/wallets/${selectedUser.wallet.id}`, {
+        await authFetch(`/api/admin/wallets/${selectedUser.wallet.id}`, {
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -662,7 +663,7 @@ export function AdminDashboard() {
       }
 
       if (selectedUser.points && String(selectedUser.points.points) !== userEditForm.points) {
-        await fetch(`/api/admin/points/${selectedUser.profile.id}`, {
+        await authFetch(`/api/admin/points/${selectedUser.profile.id}`, {
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -688,7 +689,7 @@ export function AdminDashboard() {
         ? `/api/questions/${editingQuestion.id}`
         : '/api/questions';
       
-      const response = await fetch(url, {
+      const response = await authFetch(url, {
         method: editingQuestion ? 'PATCH' : 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(questionForm),
@@ -711,7 +712,7 @@ export function AdminDashboard() {
     if (!confirm('Are you sure you want to delete this question?')) return;
 
     try {
-      const response = await fetch(`/api/questions/${id}`, {
+      const response = await authFetch(`/api/questions/${id}`, {
         method: 'DELETE',
       });
       
@@ -729,7 +730,7 @@ export function AdminDashboard() {
 
   const handleToggleQuestionActive = async (question: Question) => {
     try {
-      await fetch(`/api/questions/${question.id}`, {
+      await authFetch(`/api/questions/${question.id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ isActive: !question.isActive }),
@@ -755,7 +756,7 @@ export function AdminDashboard() {
         ? `/api/prizes/${editingPrize.id}`
         : '/api/prizes';
 
-      const response = await fetch(url, {
+      const response = await authFetch(url, {
         method: editingPrize ? 'PATCH' : 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(prizeData),
@@ -778,7 +779,7 @@ export function AdminDashboard() {
     if (!confirm('Are you sure you want to delete this prize?')) return;
 
     try {
-      const response = await fetch(`/api/prizes/${id}`, {
+      const response = await authFetch(`/api/prizes/${id}`, {
         method: 'DELETE',
       });
       
@@ -796,7 +797,7 @@ export function AdminDashboard() {
 
   const handleTogglePrizeActive = async (prize: Prize) => {
     try {
-      await fetch(`/api/prizes/${prize.id}`, {
+      await authFetch(`/api/prizes/${prize.id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ isActive: !prize.isActive }),
@@ -929,7 +930,7 @@ export function AdminDashboard() {
 
       for (const q of questionsToUpload) {
         try {
-          const response = await fetch('/api/questions', {
+          const response = await authFetch('/api/questions', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({

@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useAuth } from '../contexts/AuthContext';
+import { authFetch } from '../lib/authFetch';
 import { Trophy, Clock, Gift, TrendingUp, LogOut, Settings, User as UserIcon, ChevronDown, Share2, Copy, Check, Users } from 'lucide-react';
 import { WalletManager } from './WalletManager';
 import { QuizSession } from './QuizSession';
@@ -87,7 +88,7 @@ export function UserDashboard() {
 
     try {
       // Use combined dashboard endpoint for faster loading
-      const dashboardRes = await fetch(`/api/dashboard/${user.id}`);
+      const dashboardRes = await authFetch(`/api/dashboard/${user.id}`);
       if (dashboardRes.ok) {
         const data = await dashboardRes.json();
         

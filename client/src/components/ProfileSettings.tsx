@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useAuth } from '../contexts/AuthContext';
+import { authFetch } from '../lib/authFetch';
 import { User, Lock, Phone, MapPin, Image, Save, Eye, EyeOff, Languages, Building2, CreditCard, CheckCircle2, XCircle } from 'lucide-react';
 
 const LANGUAGE_OPTIONS = [
@@ -53,7 +54,7 @@ export function ProfileSettings() {
     setMessage(null);
 
     try {
-      const response = await fetch(`/api/profile/${user?.id}`, {
+      const response = await authFetch(`/api/profile/${user?.id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -103,7 +104,7 @@ export function ProfileSettings() {
     }
 
     try {
-      const response = await fetch(`/api/profile/${user?.id}/password`, {
+      const response = await authFetch(`/api/profile/${user?.id}/password`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

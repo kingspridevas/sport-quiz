@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { useAuth } from '../contexts/AuthContext';
+import { authFetch } from '../lib/authFetch';
 import { Wallet as WalletIcon, Plus, ArrowUpRight, Copy, Clock, CreditCard, Building2, CheckCircle, Loader2 } from 'lucide-react';
 
 interface Wallet {
@@ -46,7 +47,7 @@ export function WalletManager() {
     if (!user) return;
 
     try {
-      const response = await fetch(`/api/wallet/${user.id}`);
+      const response = await authFetch(`/api/wallet/${user.id}`);
       if (response.ok) {
         const data = await response.json();
         setWallet(data);
@@ -71,7 +72,7 @@ export function WalletManager() {
     setProcessing(true);
 
     try {
-      const response = await fetch('/api/payments/create-virtual-account', {
+      const response = await authFetch('/api/payments/create-virtual-account', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -116,7 +117,7 @@ export function WalletManager() {
     if (!virtualAccount) return false;
 
     try {
-      const response = await fetch('/api/payments/confirm', {
+      const response = await authFetch('/api/payments/confirm', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ reference: virtualAccount.reference }),
@@ -198,7 +199,7 @@ export function WalletManager() {
     setProcessing(true);
 
     try {
-      const response = await fetch('/api/paystack/initialize', {
+      const response = await authFetch('/api/paystack/initialize', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
