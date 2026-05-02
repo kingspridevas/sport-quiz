@@ -121,6 +121,8 @@ export interface IStorage {
   getReusableVirtualAccount(): Promise<PaymentTransaction | undefined>;
   createPaymentTransaction(transaction: InsertPaymentTransaction): Promise<PaymentTransaction>;
   updatePaymentTransaction(id: string, updates: Partial<InsertPaymentTransaction>): Promise<PaymentTransaction | undefined>;
+  atomicClaimPaymentTransaction(id: string, updates: Partial<InsertPaymentTransaction>): Promise<PaymentTransaction | undefined>;
+  atomicClaimPaymentTransactionByAccount(accountNumber: string): Promise<PaymentTransaction | undefined>;
   
   // Admin Stats
   getAllQuizSessions(): Promise<QuizSession[]>;
@@ -557,7 +559,8 @@ export class DbStorage implements IStorage {
       .where(and(
         eq(paymentTransactions.virtualAccountNumber, accountNumber),
         eq(paymentTransactions.status, "pending")
-      ));
+      ))
+      .orderBy(desc(paymentTransactions.createdAt));
     return result[0];
   }
 
@@ -577,8 +580,9 @@ export class DbStorage implements IStorage {
   }
 
   async getReusableVirtualAccount() {
-    // Find expired or completed transactions with valid account numbers
-    const now = new Date();
+    // Only reuse accounts whose status has been explicitly set to 'expired' or 'completed'.
+    // Never reuse a pending record (even if its expiresAt is in the past) because it can
+    // still be matched to an incoming payment and mis-credit the original owner.
     const result = await db
       .select()
       .from(paymentTransactions)
@@ -586,11 +590,45 @@ export class DbStorage implements IStorage {
         and(
           drizzleSql`${paymentTransactions.virtualAccountNumber} IS NOT NULL`,
           drizzleSql`${paymentTransactions.virtualAccountNumber} != ''`,
-          drizzleSql`(${paymentTransactions.status} IN ('expired', 'completed') OR ${paymentTransactions.expiresAt} < ${now})`
+          drizzleSql`${paymentTransactions.status} IN ('expired', 'completed')`
         )
       )
       .orderBy(desc(paymentTransactions.createdAt))
       .limit(1);
+    return result[0];
+  }
+
+  async atomicClaimPaymentTransaction(id: string, updates: Partial<InsertPaymentTransaction>) {
+    // Atomically update only if still pending — prevents double-credit on concurrent requests
+    const result = await db
+      .update(paymentTransactions)
+      .set({ ...updates, updatedAt: new Date() })
+      .where(and(
+        eq(paymentTransactions.id, id),
+        eq(paymentTransactions.status, "pending")
+      ))
+      .returning();
+    return result[0];
+  }
+
+  async atomicClaimPaymentTransactionByAccount(accountNumber: string) {
+    // Claim the newest pending row for this account number atomically.
+    // Using a subquery so we target only the most-recently-created pending record,
+    // preventing stale rows from a prior owner from capturing the deposit.
+    const result = await db
+      .update(paymentTransactions)
+      .set({ status: "processing", updatedAt: new Date() })
+      .where(and(
+        eq(paymentTransactions.virtualAccountNumber, accountNumber),
+        eq(paymentTransactions.status, "pending"),
+        drizzleSql`${paymentTransactions.id} = (
+          SELECT id FROM payment_transactions
+          WHERE virtual_account_number = ${accountNumber} AND status = 'pending'
+          ORDER BY created_at DESC
+          LIMIT 1
+        )`
+      ))
+      .returning();
     return result[0];
   }
 

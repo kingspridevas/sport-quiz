@@ -70,7 +70,7 @@ export const walletTransactions = pgTable("wallet_transactions", {
   type: text("type").notNull(), // 'credit', 'debit', 'prize', 'refund'
   amount: numeric("amount").notNull(),
   description: text("description"),
-  reference: text("reference"),
+  reference: text("reference").unique(),
   source: text("source"), // 'paystack', '9psb', 'system', 'admin'
   status: text("status").default("completed"),
   createdAt: timestamp("created_at").defaultNow().notNull(),

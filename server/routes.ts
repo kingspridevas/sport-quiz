@@ -1,4 +1,5 @@
 import type { Express, Request, Response, NextFunction } from "express";
+import crypto from "crypto";
 import bcrypt from "bcryptjs";
 import { storage } from "./storage.js";
 import { authSignupSchema, authLoginSchema, insertQuestionSchema, insertQuizSessionSchema, insertQuizAnswerSchema } from "../shared/schema.js";
@@ -949,6 +950,11 @@ export function registerRoutes(app: Express) {
         
         if (reusableAccount && reusableAccount.virtualAccountNumber) {
           try {
+            // Mark the old record expired BEFORE reallocating so it can never be matched
+            // to an incoming payment for the new owner.
+            if (reusableAccount.status === "pending") {
+              await storage.updatePaymentTransaction(reusableAccount.id, { status: "expired" });
+            }
             psbResponse = await reallocateVirtualAccount({
               accountNumber: reusableAccount.virtualAccountNumber,
               newReference: reference,
@@ -1041,21 +1047,20 @@ export function registerRoutes(app: Express) {
         return res.json({ success: true, status: "success", code: "00", message: "Acknowledged" });
       }
 
-      const transaction = await storage.getPaymentTransactionByAccount(accountnumber);
-      
+      // Atomically claim the newest pending record for this account number.
+      // This prevents concurrent webhook deliveries from double-crediting and
+      // prevents stale records belonging to a prior owner from capturing the deposit.
+      const transaction = await storage.atomicClaimPaymentTransactionByAccount(accountnumber);
+
       if (!transaction) {
-        console.error("Payment transaction not found for account:", accountnumber);
+        console.log("9PSB Webhook: no claimable pending transaction for account:", accountnumber);
         return res.json({ success: true, status: "success", code: "00", message: "Acknowledged" });
       }
 
-      if (transaction.status !== "pending") {
-        console.log("Transaction already processed:", transaction.reference);
-        return res.json({ success: true, status: "success", code: "00", message: "Acknowledged" });
-      }
-
+      // Finalize with correct session id and mark completed
       await storage.updatePaymentTransaction(transaction.id, {
         status: "completed",
-        sessionId: sessionid,
+        sessionId: sessionid || null,
         completedAt: new Date(),
       });
 
@@ -1063,21 +1068,30 @@ export function registerRoutes(app: Express) {
       if (wallet) {
         const newBalance = parseFloat(wallet.balance) + parseFloat(transaction.amount);
         const newTotalFunded = parseFloat(wallet.totalFunded) + parseFloat(transaction.amount);
-        
+
         await storage.updateWallet(wallet.id, {
           balance: newBalance.toString(),
           totalFunded: newTotalFunded.toString(),
         });
 
-        await storage.createWalletTransaction({
-          walletId: wallet.id,
-          type: "credit",
-          amount: transaction.amount,
-          description: "Wallet funding via bank transfer",
-          reference: transaction.reference,
-          source: "9psb",
-          status: "completed"
-        });
+        try {
+          await storage.createWalletTransaction({
+            walletId: wallet.id,
+            type: "credit",
+            amount: transaction.amount,
+            description: "Wallet funding via bank transfer",
+            reference: transaction.reference,
+            source: "9psb",
+            status: "completed"
+          });
+        } catch (dupErr: any) {
+          // Unique constraint violation means this reference was already credited
+          if (dupErr.code === '23505') {
+            console.warn("9PSB Webhook: duplicate wallet transaction blocked for ref:", transaction.reference);
+            return res.json({ success: true, status: "success", code: "00", message: "Acknowledged" });
+          }
+          throw dupErr;
+        }
 
         await checkReferralQualification(transaction.userId, parseFloat(transaction.amount));
       }
@@ -1124,33 +1138,47 @@ export function registerRoutes(app: Express) {
       if (psbResult.code === "00" && Array.isArray(psbResult.transactions) && psbResult.transactions.length > 0) {
         const psbTx = psbResult.transactions[0];
 
-        await storage.updatePaymentTransaction(transaction.id, {
+        // Atomically claim the transaction — only proceeds if status is still 'pending',
+        // preventing double-credit from concurrent confirmation requests.
+        const claimed = await storage.atomicClaimPaymentTransaction(transaction.id, {
           status: "completed",
           sessionId: psbTx.transaction?.sessionid || null,
           completedAt: new Date(),
         });
 
-        const wallet = await storage.getWallet(transaction.userId);
+        if (!claimed) {
+          return res.json({ success: true, status: "already_completed", message: "Payment already processed" });
+        }
+
+        const wallet = await storage.getWallet(claimed.userId);
         if (wallet) {
-          const newBalance = parseFloat(wallet.balance) + parseFloat(transaction.amount);
-          const newTotalFunded = parseFloat(wallet.totalFunded) + parseFloat(transaction.amount);
+          const newBalance = parseFloat(wallet.balance) + parseFloat(claimed.amount);
+          const newTotalFunded = parseFloat(wallet.totalFunded) + parseFloat(claimed.amount);
 
           await storage.updateWallet(wallet.id, {
             balance: newBalance.toString(),
             totalFunded: newTotalFunded.toString(),
           });
 
-          await storage.createWalletTransaction({
-            walletId: wallet.id,
-            type: "credit",
-            amount: transaction.amount,
-            description: "Wallet funding via bank transfer",
-            reference: transaction.reference,
-            source: "9psb",
-            status: "completed",
-          });
+          try {
+            await storage.createWalletTransaction({
+              walletId: wallet.id,
+              type: "credit",
+              amount: claimed.amount,
+              description: "Wallet funding via bank transfer",
+              reference: claimed.reference,
+              source: "9psb",
+              status: "completed",
+            });
+          } catch (dupErr: any) {
+            if (dupErr.code === '23505') {
+              console.warn("Confirm: duplicate wallet transaction blocked for ref:", claimed.reference);
+              return res.json({ success: true, status: "completed", message: "Payment confirmed and credited" });
+            }
+            throw dupErr;
+          }
 
-          await checkReferralQualification(transaction.userId, parseFloat(transaction.amount));
+          await checkReferralQualification(claimed.userId, parseFloat(claimed.amount));
         }
 
         return res.json({ success: true, status: "completed", message: "Payment confirmed and credited" });
@@ -1643,45 +1671,80 @@ export function registerRoutes(app: Express) {
   // Paystack webhook for reliable payment confirmation
   app.post("/api/paystack/webhook", async (req, res) => {
     try {
+      // ── Signature verification ──────────────────────────────────────────────
+      // Paystack signs every delivery with HMAC-SHA512 using your secret key.
+      // We must verify this before trusting ANY field in the payload, otherwise
+      // an attacker can POST a fake charge.success and credit arbitrary wallets.
+      const paystackSecret = process.env.PAYSTACK_SECRET_KEY;
+      if (!paystackSecret) {
+        console.error('Paystack webhook: PAYSTACK_SECRET_KEY is not configured');
+        return res.sendStatus(500);
+      }
+
+      const signature = req.headers['x-paystack-signature'] as string | undefined;
+      if (!signature) {
+        console.error('Paystack webhook: missing x-paystack-signature header');
+        return res.sendStatus(400);
+      }
+
+      const rawBody = (req as any).rawBody as string | undefined;
+      if (!rawBody) {
+        console.error('Paystack webhook: raw body unavailable — cannot verify signature');
+        return res.sendStatus(400);
+      }
+
+      const expectedHash = crypto
+        .createHmac('sha512', paystackSecret)
+        .update(rawBody)
+        .digest('hex');
+
+      if (expectedHash !== signature) {
+        console.error('Paystack webhook: signature mismatch — request rejected');
+        return res.sendStatus(400);
+      }
+      // ── End signature verification ──────────────────────────────────────────
+
       const event = req.body;
-      
-      // Verify this is a charge.success event
+
       if (event.event === 'charge.success') {
         const data = event.data;
         const reference = data.reference;
         const metadata = data.metadata;
         const userId = metadata?.userId;
+        // Always use the amount Paystack reports (in kobo), not local metadata
         const amountInKobo = data.amount;
         const amountInNaira = amountInKobo / 100;
 
-        if (userId) {
-          // Check if this transaction was already processed
-          const existingTransaction = await storage.getWalletTransactionByReference(reference);
-          if (existingTransaction) {
-            return res.sendStatus(200);
-          }
-
+        if (userId && reference) {
           const wallet = await storage.getWallet(userId);
           if (wallet) {
             const currentBalance = Number(wallet.balance) || 0;
             const currentTotalFunded = Number(wallet.totalFunded) || 0;
-            
+
             await storage.updateWallet(wallet.id, {
               balance: String(currentBalance + amountInNaira),
               totalFunded: String(currentTotalFunded + amountInNaira)
             });
 
-            await storage.createWalletTransaction({
-              walletId: wallet.id,
-              type: 'credit',
-              amount: String(amountInNaira),
-              description: `Paystack funding - Ref: ${reference}`,
-              status: 'completed',
-              reference: reference,
-              source: 'paystack'
-            });
+            try {
+              await storage.createWalletTransaction({
+                walletId: wallet.id,
+                type: 'credit',
+                amount: String(amountInNaira),
+                description: `Paystack funding - Ref: ${reference}`,
+                status: 'completed',
+                reference: reference,
+                source: 'paystack'
+              });
+            } catch (dupErr: any) {
+              // Unique constraint on reference — this reference was already credited
+              if (dupErr.code === '23505') {
+                console.warn('Paystack webhook: duplicate reference blocked:', reference);
+                return res.sendStatus(200);
+              }
+              throw dupErr;
+            }
 
-            // Check if this funding qualifies a referral
             await checkReferralQualification(userId, amountInNaira);
           }
         }
