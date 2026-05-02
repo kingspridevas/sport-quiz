@@ -33,7 +33,6 @@ interface Question {
   optionCYoruba?: string;
   optionCHausa?: string;
   optionCIgbo?: string;
-  correctAnswer: string;
   difficulty: string;
   isActive: boolean;
 }
@@ -72,6 +71,7 @@ export function QuizSession({ onComplete }: QuizSessionProps) {
   const [correctCount, setCorrectCount] = useState(0);
   const [timeRemaining, setTimeRemaining] = useState(TIME_PER_QUESTION);
   const [selectedLanguage, setSelectedLanguage] = useState(profile?.preferredLanguage || 'english');
+  const [serverCorrectAnswer, setServerCorrectAnswer] = useState<string | null>(null);
 
   const currentQuestion = questions[currentQuestionIndex];
   const language = selectedLanguage;
@@ -139,21 +139,27 @@ export function QuizSession({ onComplete }: QuizSessionProps) {
   const handleTimeUp = async () => {
     if (showResult || !currentSession || !currentQuestion) return;
 
-    const isCorrect = selectedAnswer === currentQuestion.correctAnswer;
-    const newCorrectCount = isCorrect ? correctCount + 1 : correctCount;
-
     try {
-      await authFetch('/api/quiz/answer', {
+      const res = await authFetch('/api/quiz/answer', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           sessionId: currentSession.id,
           questionId: currentQuestion.id,
           selectedAnswer: selectedAnswer || 'TIMEOUT',
-          isCorrect,
         }),
       });
 
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || 'Failed to submit answer');
+      }
+
+      const data = await res.json();
+      const isCorrect = data.isCorrect === true;
+      const newCorrectCount = isCorrect ? correctCount + 1 : correctCount;
+
+      setServerCorrectAnswer(data.correctAnswer || null);
       setCorrectCount(newCorrectCount);
       setShowResult(true);
 
@@ -162,8 +168,9 @@ export function QuizSession({ onComplete }: QuizSessionProps) {
           setCurrentQuestionIndex(currentQuestionIndex + 1);
           setSelectedAnswer(null);
           setShowResult(false);
+          setServerCorrectAnswer(null);
         } else {
-          completeSession(newCorrectCount);
+          completeSession();
         }
       }, 2000);
     } catch (error) {
@@ -243,21 +250,27 @@ export function QuizSession({ onComplete }: QuizSessionProps) {
   const handleAnswerSubmit = async () => {
     if (!selectedAnswer || !currentSession || !currentQuestion) return;
 
-    const isCorrect = selectedAnswer === currentQuestion.correctAnswer;
-    const newCorrectCount = isCorrect ? correctCount + 1 : correctCount;
-
     try {
-      await authFetch('/api/quiz/answer', {
+      const res = await authFetch('/api/quiz/answer', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           sessionId: currentSession.id,
           questionId: currentQuestion.id,
           selectedAnswer,
-          isCorrect,
         }),
       });
 
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || 'Failed to submit answer');
+      }
+
+      const data = await res.json();
+      const isCorrect = data.isCorrect === true;
+      const newCorrectCount = isCorrect ? correctCount + 1 : correctCount;
+
+      setServerCorrectAnswer(data.correctAnswer || null);
       setCorrectCount(newCorrectCount);
       setShowResult(true);
 
@@ -266,8 +279,9 @@ export function QuizSession({ onComplete }: QuizSessionProps) {
           setCurrentQuestionIndex(currentQuestionIndex + 1);
           setSelectedAnswer(null);
           setShowResult(false);
+          setServerCorrectAnswer(null);
         } else {
-          completeSession(newCorrectCount);
+          completeSession();
         }
       }, 2000);
     } catch (error) {
@@ -276,23 +290,22 @@ export function QuizSession({ onComplete }: QuizSessionProps) {
     }
   };
 
-  const completeSession = async (finalCorrectCount: number) => {
+  const completeSession = async () => {
     if (!currentSession || !user) return;
 
-    const pointsEarned = finalCorrectCount >= MIN_CORRECT_ANSWERS ? 1 : 0;
-
     try {
-      await authFetch(`/api/quiz/session/${currentSession.id}`, {
+      const res = await authFetch(`/api/quiz/session/${currentSession.id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           status: 'completed',
-          correctAnswers: finalCorrectCount,
-          totalQuestions: QUESTIONS_PER_SESSION,
-          pointsEarned,
-          completedAt: new Date().toISOString(),
         }),
       });
+
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        console.error('Error completing session:', err.error);
+      }
 
       setSessionComplete(true);
     } catch (error) {
@@ -475,7 +488,7 @@ export function QuizSession({ onComplete }: QuizSessionProps) {
               const optionKey = `option${option}` as 'optionA' | 'optionB' | 'optionC';
               const optionText = getTranslatedText(currentQuestion, optionKey);
               const isSelected = selectedAnswer === option;
-              const isCorrect = option === currentQuestion.correctAnswer;
+              const isCorrect = showResult && serverCorrectAnswer === option;
               const showCorrectAnswer = showResult && isCorrect;
               const showWrongAnswer = showResult && isSelected && !isCorrect;
 

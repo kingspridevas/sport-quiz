@@ -1,4 +1,4 @@
-import { pgTable, text, uuid, timestamp, boolean, integer, numeric } from "drizzle-orm/pg-core";
+import { pgTable, text, uuid, timestamp, boolean, integer, numeric, unique } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 
@@ -140,7 +140,9 @@ export const quizAnswers = pgTable("quiz_answers", {
   selectedAnswer: text("selected_answer").notNull(), // 'A', 'B', or 'C'
   isCorrect: boolean("is_correct").notNull(),
   answeredAt: timestamp("answered_at").defaultNow().notNull(),
-});
+}, (table) => [
+  unique("quiz_answers_session_question_unique").on(table.sessionId, table.questionId),
+]);
 
 export const insertQuizAnswerSchema = createInsertSchema(quizAnswers).omit({
   id: true,

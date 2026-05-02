@@ -437,17 +437,19 @@ export function registerRoutes(app: Express) {
   });
 
   // Questions
-  app.get("/api/questions", async (req, res) => {
+  app.get("/api/questions", requireAuth, async (req, res) => {
     try {
       const limit = req.query.limit ? parseInt(req.query.limit as string) : 10;
       const questions = await storage.getActiveQuestions(limit);
-      res.json(questions);
+      // Strip correctAnswer before sending to the browser
+      const safeQuestions = questions.map(({ correctAnswer: _removed, ...q }) => q);
+      res.json(safeQuestions);
     } catch (error: any) {
       res.status(500).json({ error: error.message });
     }
   });
 
-  app.get("/api/questions/all", async (_req, res) => {
+  app.get("/api/questions/all", requireAdmin, async (_req, res) => {
     try {
       const questions = await storage.getAllQuestions();
       res.json(questions);
@@ -529,11 +531,14 @@ export function registerRoutes(app: Express) {
     }
   });
 
-  app.get("/api/quiz/session/:id", async (req, res) => {
+  app.get("/api/quiz/session/:id", requireAuth, async (req, res) => {
     try {
       const session = await storage.getQuizSession(req.params.id);
       if (!session) {
         return res.status(404).json({ error: "Session not found" });
+      }
+      if (session.userId !== req.authUser!.userId) {
+        return res.status(403).json({ error: "Access denied" });
       }
       res.json(session);
     } catch (error: any) {
@@ -553,11 +558,47 @@ export function registerRoutes(app: Express) {
     }
   });
 
+  const QUIZ_QUESTIONS_PER_SESSION = 5;
+  const QUIZ_MIN_CORRECT_TO_EARN = 3;
+
   app.post("/api/quiz/answer", requireAuth, async (req, res) => {
     try {
-      const validatedData = insertQuizAnswerSchema.parse(req.body);
-      const answer = await storage.createQuizAnswer(validatedData);
-      res.json(answer);
+      const { sessionId, questionId, selectedAnswer } = req.body;
+      if (!sessionId || !questionId || !selectedAnswer) {
+        return res.status(400).json({ error: "sessionId, questionId, and selectedAnswer are required" });
+      }
+
+      // Verify session exists and belongs to the authenticated user
+      const session = await storage.getQuizSession(sessionId);
+      if (!session) return res.status(404).json({ error: "Session not found" });
+      if (session.userId !== req.authUser!.userId) {
+        return res.status(403).json({ error: "Access denied" });
+      }
+      if (session.status !== 'in_progress') {
+        return res.status(400).json({ error: "Session is not in progress" });
+      }
+
+      // Look up the question server-side and compute correctness
+      const question = await storage.getQuestion(questionId);
+      if (!question) return res.status(404).json({ error: "Question not found" });
+
+      const isCorrect = selectedAnswer === question.correctAnswer;
+
+      // Atomically enforce: session still in_progress, one answer per question,
+      // and total answer count cap — using a DB transaction with row lock
+      const answer = await storage.createQuizAnswerAtomic(
+        { sessionId, questionId, selectedAnswer, isCorrect },
+        QUIZ_QUESTIONS_PER_SESSION,
+      );
+
+      if (answer === null) {
+        return res.status(409).json({
+          error: "Answer rejected: question already answered, session limit reached, or session no longer in progress",
+        });
+      }
+
+      // Return the answer along with the correct answer so the UI can show it
+      res.json({ ...answer, correctAnswer: question.correctAnswer });
     } catch (error: any) {
       res.status(400).json({ error: error.message });
     }
@@ -565,29 +606,53 @@ export function registerRoutes(app: Express) {
 
   app.patch("/api/quiz/session/:id", requireAuth, async (req, res) => {
     try {
-      const updates = req.body;
-      
-      // Convert completedAt string to Date if present
-      if (updates.completedAt && typeof updates.completedAt === 'string') {
-        updates.completedAt = new Date(updates.completedAt);
-      }
-      
-      const session = await storage.updateQuizSession(req.params.id, updates);
-      if (!session) {
+      // Fetch session and verify ownership
+      const existingSession = await storage.getQuizSession(req.params.id);
+      if (!existingSession) {
         return res.status(404).json({ error: "Session not found" });
       }
-      
-      // If session completed and points earned, update user points
-      if (updates.status === 'completed' && updates.pointsEarned > 0) {
-        const userPoints = await storage.getUserPoints(session.userId);
-        if (userPoints) {
-          await storage.updateUserPoints(session.userId, {
-            points: userPoints.points + updates.pointsEarned,
-            totalEarned: userPoints.totalEarned + updates.pointsEarned,
-          });
-        }
+      if (existingSession.userId !== req.authUser!.userId) {
+        return res.status(403).json({ error: "Access denied" });
       }
-      
+      if (existingSession.status !== 'in_progress') {
+        return res.status(400).json({ error: "Session is already completed or abandoned" });
+      }
+
+      const { status } = req.body;
+      if (!status || !['completed', 'abandoned'].includes(status)) {
+        return res.status(400).json({ error: "Invalid status. Must be 'completed' or 'abandoned'" });
+      }
+
+      // Compute scores server-side from stored answers — never trust client values
+      const storedAnswers = await storage.getSessionAnswers(req.params.id);
+      const correctAnswers = storedAnswers.filter(a => a.isCorrect).length;
+      const totalQuestions = storedAnswers.length;
+
+      // Enforce that the full quiz was attempted before awarding points
+      if (status === 'completed' && totalQuestions < QUIZ_QUESTIONS_PER_SESSION) {
+        return res.status(400).json({
+          error: `Cannot complete session: only ${totalQuestions} of ${QUIZ_QUESTIONS_PER_SESSION} questions answered`,
+        });
+      }
+
+      // Award exactly 0 or 1 point based on server-computed result
+      const pointsEarned = (status === 'completed' && correctAnswers >= QUIZ_MIN_CORRECT_TO_EARN) ? 1 : 0;
+
+      // Atomically update session status and credit points in a single transaction
+      const session = await storage.completeQuizSessionAtomic(
+        req.params.id,
+        status,
+        correctAnswers,
+        totalQuestions,
+        pointsEarned,
+        existingSession.userId,
+      );
+
+      if (!session) {
+        // Race condition: another request already completed the session
+        return res.status(409).json({ error: "Session was already completed" });
+      }
+
       res.json(session);
     } catch (error: any) {
       console.error('Quiz session update error:', error);

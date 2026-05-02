@@ -352,9 +352,50 @@ export class DbStorage implements IStorage {
     return db.select().from(quizAnswers).where(eq(quizAnswers.sessionId, sessionId));
   }
 
+  async getSessionAnswerForQuestion(sessionId: string, questionId: string) {
+    const result = await db
+      .select()
+      .from(quizAnswers)
+      .where(and(eq(quizAnswers.sessionId, sessionId), eq(quizAnswers.questionId, questionId)));
+    return result[0];
+  }
+
   async createQuizAnswer(answer: InsertQuizAnswer) {
     const result = await db.insert(quizAnswers).values(answer).returning();
     return result[0];
+  }
+
+  /**
+   * Atomically insert an answer, enforcing:
+   * - session still in_progress (re-read inside transaction)
+   * - one answer per (session, question) via DB unique constraint
+   * - total answer count < maxAnswers
+   * Returns the saved answer or null if any guard failed.
+   */
+  async createQuizAnswerAtomic(
+    answer: InsertQuizAnswer,
+    maxAnswers: number,
+  ): Promise<typeof quizAnswers.$inferSelect | null> {
+    return db.transaction(async (tx) => {
+      // Lock the session row and re-check in_progress
+      const sessionRows = await tx
+        .select()
+        .from(quizSessions)
+        .where(and(eq(quizSessions.id, answer.sessionId), eq(quizSessions.status, 'in_progress')))
+        .for('update');
+      if (!sessionRows[0]) return null; // session not in_progress
+
+      // Check current answer count
+      const countRows = await tx
+        .select({ cnt: drizzleSql<number>`COUNT(*)::int` })
+        .from(quizAnswers)
+        .where(eq(quizAnswers.sessionId, answer.sessionId));
+      if ((countRows[0]?.cnt ?? 0) >= maxAnswers) return null; // cap exceeded
+
+      // Insert — DB unique constraint on (session_id, question_id) prevents duplicates
+      const result = await tx.insert(quizAnswers).values(answer).onConflictDoNothing().returning();
+      return result[0] ?? null; // null if duplicate (conflict silently skipped)
+    });
   }
 
   // User Points
@@ -375,6 +416,49 @@ export class DbStorage implements IStorage {
       .where(eq(userPoints.userId, userId))
       .returning();
     return result[0];
+  }
+
+  /**
+   * Atomically complete a quiz session and credit points in a single transaction.
+   * Returns null if the session was not in_progress (idempotency guard).
+   */
+  async completeQuizSessionAtomic(
+    sessionId: string,
+    status: 'completed' | 'abandoned',
+    correctAnswers: number,
+    totalQuestions: number,
+    pointsEarned: number,
+    userId: string,
+  ) {
+    return db.transaction(async (tx) => {
+      // Conditional update: only mutate if the session is still in_progress
+      const updated = await tx
+        .update(quizSessions)
+        .set({ status, correctAnswers, totalQuestions, pointsEarned, completedAt: new Date() })
+        .where(and(eq(quizSessions.id, sessionId), eq(quizSessions.status, 'in_progress')))
+        .returning();
+
+      if (!updated[0]) return null; // Session already completed/abandoned — no-op
+
+      if (pointsEarned > 0) {
+        const currentPoints = await tx
+          .select()
+          .from(userPoints)
+          .where(eq(userPoints.userId, userId));
+        if (currentPoints[0]) {
+          await tx
+            .update(userPoints)
+            .set({
+              points: currentPoints[0].points + pointsEarned,
+              totalEarned: currentPoints[0].totalEarned + pointsEarned,
+              updatedAt: new Date(),
+            })
+            .where(eq(userPoints.userId, userId));
+        }
+      }
+
+      return updated[0];
+    });
   }
 
   // Prize Config
