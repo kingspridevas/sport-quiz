@@ -16,7 +16,7 @@ async function customFetch(url: string, options?: RequestInit) {
     try {
       const errorJson = JSON.parse(errorText);
       errorMessage = errorJson.error || errorText;
-    } catch {}
+    } catch { /* ignore parse errors */ }
     throw new Error(errorMessage);
   }
 
