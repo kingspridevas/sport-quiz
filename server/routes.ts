@@ -188,7 +188,7 @@ export function registerRoutes(app: Express) {
         }
       }
 
-      const passwordHash = await bcrypt.hash(validatedData.password, 10);
+      const passwordHash = await bcrypt.hash(validatedData.password, 12);
 
       // Generate unique referral code for new user (6 chars alphanumeric)
       const generateReferralCode = () => {
@@ -378,7 +378,7 @@ export function registerRoutes(app: Express) {
         return res.status(401).json({ error: "Current password is incorrect" });
       }
 
-      const newPasswordHash = await bcrypt.hash(newPassword, 10);
+      const newPasswordHash = await bcrypt.hash(newPassword, 12);
       await storage.updateProfile(req.params.id, { passwordHash: newPasswordHash });
 
       res.json({ success: true, message: "Password changed successfully" });

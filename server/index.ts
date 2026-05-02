@@ -1,10 +1,19 @@
-import express, { type Request, Response, NextFunction } from "express";
+import express from "express";
+import cors from "cors";
+import rateLimit from "express-rate-limit";
 import { registerRoutes } from "./routes.js";
 import { setupVite, serveStatic, log } from "./vite.js";
 
 const app = express();
 
 app.disable("x-powered-by");
+
+app.use(cors({
+  origin: ["https://wazosports.com", "http://localhost:5000"],
+  methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+  allowedHeaders: ["Content-Type", "Authorization"],
+  credentials: true,
+}));
 
 app.use((_req, res, next) => {
   res.setHeader("X-Content-Type-Options", "nosniff");
@@ -28,6 +37,26 @@ app.use((_req, res, next) => {
   );
   next();
 });
+
+const apiLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 100,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: "Too many requests, please try again later." },
+});
+
+const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: "Too many login attempts, please try again later." },
+});
+
+app.use("/api/", apiLimiter);
+app.use("/api/auth/login", authLimiter);
+app.use("/api/auth/signup", authLimiter);
 
 app.use(express.json({
   verify: (req: any, _res, buf) => {
@@ -70,15 +99,23 @@ app.use((req, res, next) => {
 
 (async () => {
   registerRoutes(app);
-  
+
+  app.use((err: any, _req: any, res: any, _next: any) => {
+    const status = err.status || err.statusCode || 500;
+    const isDev = process.env.NODE_ENV !== "production";
+    res.status(status).json({
+      error: isDev ? (err.message || "Internal server error") : "Internal server error",
+    });
+  });
+
   const PORT = 5000;
   const httpServer = app.listen(PORT, "0.0.0.0");
-  
+
   if (process.env.NODE_ENV === "production") {
     serveStatic(app);
   } else {
     await setupVite(app, httpServer);
   }
-  
+
   log(`Server running on port ${PORT}`);
 })();
