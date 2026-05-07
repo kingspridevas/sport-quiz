@@ -1646,36 +1646,26 @@ export function registerRoutes(app: Express) {
         const amountInNaira = amountInKobo / 100;
 
         if (userId) {
-          // Check for duplicate transaction (idempotency)
-          const existingTransaction = await storage.getWalletTransactionByReference(reference);
-          if (existingTransaction) {
-            return res.redirect(`/?payment=success&amount=${amountInNaira}&message=Already processed`);
-          }
-
-          // Get current wallet and update balance
           const wallet = await storage.getWallet(userId);
           if (wallet) {
-            const currentBalance = Number(wallet.balance) || 0;
-            const currentTotalFunded = Number(wallet.totalFunded) || 0;
-            
-            await storage.updateWallet(wallet.id, {
-              balance: String(currentBalance + amountInNaira),
-              totalFunded: String(currentTotalFunded + amountInNaira)
-            });
+            const { credited } = await storage.atomicCreditWalletByReference(
+              wallet.id,
+              amountInNaira,
+              {
+                walletId: wallet.id,
+                type: 'credit',
+                amount: String(amountInNaira),
+                description: `Paystack funding - Ref: ${reference}`,
+                status: 'completed',
+                reference: reference,
+                source: 'paystack'
+              }
+            );
 
-            // Create wallet transaction record
-            await storage.createWalletTransaction({
-              walletId: wallet.id,
-              type: 'credit',
-              amount: String(amountInNaira),
-              description: `Paystack funding - Ref: ${reference}`,
-              status: 'completed',
-              reference: reference,
-              source: 'paystack'
-            });
-
-            // Check if this funding qualifies a referral
-            await checkReferralQualification(userId, amountInNaira);
+            if (credited) {
+              // Only run downstream logic when we actually credited
+              await checkReferralQualification(userId, amountInNaira);
+            }
 
             return res.redirect(`/?payment=success&amount=${amountInNaira}`);
           }
@@ -1741,16 +1731,10 @@ export function registerRoutes(app: Express) {
         if (userId && reference) {
           const wallet = await storage.getWallet(userId);
           if (wallet) {
-            const currentBalance = Number(wallet.balance) || 0;
-            const currentTotalFunded = Number(wallet.totalFunded) || 0;
-
-            await storage.updateWallet(wallet.id, {
-              balance: String(currentBalance + amountInNaira),
-              totalFunded: String(currentTotalFunded + amountInNaira)
-            });
-
-            try {
-              await storage.createWalletTransaction({
+            const { credited } = await storage.atomicCreditWalletByReference(
+              wallet.id,
+              amountInNaira,
+              {
                 walletId: wallet.id,
                 type: 'credit',
                 amount: String(amountInNaira),
@@ -1758,17 +1742,15 @@ export function registerRoutes(app: Express) {
                 status: 'completed',
                 reference: reference,
                 source: 'paystack'
-              });
-            } catch (dupErr: any) {
-              // Unique constraint on reference — this reference was already credited
-              if (dupErr.code === '23505') {
-                console.warn('Paystack webhook: duplicate reference blocked:', reference);
-                return res.sendStatus(200);
               }
-              throw dupErr;
-            }
+            );
 
-            await checkReferralQualification(userId, amountInNaira);
+            if (credited) {
+              // Only run downstream logic when we actually credited
+              await checkReferralQualification(userId, amountInNaira);
+            } else {
+              console.warn('Paystack webhook: duplicate reference blocked:', reference);
+            }
           }
         }
       }

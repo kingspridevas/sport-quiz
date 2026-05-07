@@ -152,6 +152,16 @@ export interface IStorage {
   
   // Referral Stats
   getReferralStats(userId: string): Promise<{ totalReferrals: number; qualifiedReferrals: number; pendingReferrals: number; totalEarnings: number }>;
+
+  // Atomic wallet crediting — inserts the ledger row first (unique constraint on reference
+  // is the idempotency gate) and only then updates balances in the same transaction.
+  // Returns { credited: true } when the wallet was actually credited, { credited: false }
+  // when the reference was already present (duplicate delivery / concurrent request).
+  atomicCreditWalletByReference(
+    walletId: string,
+    amountInNaira: number,
+    transaction: InsertWalletTransaction
+  ): Promise<{ credited: boolean }>;
 }
 
 export class DbStorage implements IStorage {
@@ -840,6 +850,39 @@ export class DbStorage implements IStorage {
       .reduce((sum, r) => sum + parseFloat(r.rewardAmount || '0'), 0);
 
     return { totalReferrals, qualifiedReferrals, pendingReferrals, totalEarnings };
+  }
+
+  // Atomic wallet crediting — the unique constraint on wallet_transactions.reference is the
+  // idempotency gate. We insert the ledger row FIRST inside a transaction; if it succeeds we
+  // increment the wallet balances using SQL arithmetic (no stale read). If the insert fails
+  // with a duplicate-key error (PG code 23505) we roll back without touching the wallet.
+  async atomicCreditWalletByReference(
+    walletId: string,
+    amountInNaira: number,
+    transaction: InsertWalletTransaction
+  ): Promise<{ credited: boolean }> {
+    try {
+      await db.transaction(async (tx) => {
+        // Insert ledger row first — throws 23505 on duplicate reference
+        await tx.insert(walletTransactions).values(transaction);
+
+        // Only reached when the insert succeeded (new reference)
+        await tx.execute(
+          drizzleSql`UPDATE wallets
+                     SET balance      = balance      + ${amountInNaira},
+                         total_funded = total_funded + ${amountInNaira},
+                         updated_at   = NOW()
+                     WHERE id = ${walletId}`
+        );
+      });
+      return { credited: true };
+    } catch (err: any) {
+      if (err.code === '23505') {
+        // Reference already exists — duplicate delivery, no wallet mutation occurred
+        return { credited: false };
+      }
+      throw err;
+    }
   }
 }
 
