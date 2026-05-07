@@ -50,7 +50,7 @@ export interface IStorage {
   getProfileByEmail(email: string): Promise<Profile | undefined>;
   getAllProfiles(): Promise<Profile[]>;
   createProfile(profile: InsertProfile): Promise<Profile>;
-  updateProfile(id: string, profile: Partial<InsertProfile>): Promise<Profile | undefined>;
+  updateProfile(id: string, profile: Partial<Profile>): Promise<Profile | undefined>;
   
   // Wallets
   getWallet(userId: string): Promise<Wallet | undefined>;
@@ -175,7 +175,7 @@ export class DbStorage implements IStorage {
     return result[0];
   }
 
-  async updateProfile(id: string, updates: Partial<InsertProfile>) {
+  async updateProfile(id: string, updates: Partial<Profile>) {
     const result = await db
       .update(profiles)
       .set({ ...updates, updatedAt: new Date() })

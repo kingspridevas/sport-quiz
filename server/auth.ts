@@ -10,6 +10,7 @@ export interface TokenPayload {
   userId: string;
   email: string;
   isAdmin: boolean;
+  tokenVersion: number;
   iat: number;
   exp: number;
 }
@@ -26,12 +27,13 @@ function sign(payload: string): string {
   return crypto.createHmac("sha256", SECRET).update(payload).digest("base64url");
 }
 
-export function createToken(userId: string, email: string, isAdmin: boolean): string {
+export function createToken(userId: string, email: string, isAdmin: boolean, tokenVersion: number): string {
   const now = Math.floor(Date.now() / 1000);
   const payload: TokenPayload = {
     userId,
     email,
     isAdmin,
+    tokenVersion,
     iat: now,
     exp: now + 60 * 60 * 24 * 30, // 30 days
   };

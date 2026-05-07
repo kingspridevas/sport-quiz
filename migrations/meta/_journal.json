@@ -8,6 +8,13 @@
       "when": 1777750075413,
       "tag": "0000_red_ego",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1778170656377,
+      "tag": "0001_lazy_captain_flint",
+      "breakpoints": true
     }
   ]
 }

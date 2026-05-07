@@ -17,23 +17,37 @@ declare global {
   }
 }
 
-function requireAuth(req: Request, res: Response, next: NextFunction) {
-  const token = extractToken(req.headers.authorization);
-  if (!token) return res.status(401).json({ error: "Authentication required" });
-  const payload = verifyToken(token);
-  if (!payload) return res.status(401).json({ error: "Invalid or expired token" });
-  req.authUser = payload;
-  next();
+async function requireAuth(req: Request, res: Response, next: NextFunction) {
+  try {
+    const token = extractToken(req.headers.authorization);
+    if (!token) return res.status(401).json({ error: "Authentication required" });
+    const payload = verifyToken(token);
+    if (!payload) return res.status(401).json({ error: "Invalid or expired token" });
+    const profile = await storage.getProfile(payload.userId);
+    if (!profile) return res.status(401).json({ error: "Account not found" });
+    if (profile.tokenVersion !== payload.tokenVersion) return res.status(401).json({ error: "Session expired, please log in again" });
+    req.authUser = { ...payload, isAdmin: profile.isAdmin };
+    next();
+  } catch {
+    res.status(500).json({ error: "Authentication check failed" });
+  }
 }
 
-function requireAdmin(req: Request, res: Response, next: NextFunction) {
-  const token = extractToken(req.headers.authorization);
-  if (!token) return res.status(401).json({ error: "Authentication required" });
-  const payload = verifyToken(token);
-  if (!payload) return res.status(401).json({ error: "Invalid or expired token" });
-  if (!payload.isAdmin) return res.status(403).json({ error: "Admin access required" });
-  req.authUser = payload;
-  next();
+async function requireAdmin(req: Request, res: Response, next: NextFunction) {
+  try {
+    const token = extractToken(req.headers.authorization);
+    if (!token) return res.status(401).json({ error: "Authentication required" });
+    const payload = verifyToken(token);
+    if (!payload) return res.status(401).json({ error: "Invalid or expired token" });
+    const profile = await storage.getProfile(payload.userId);
+    if (!profile) return res.status(401).json({ error: "Account not found" });
+    if (profile.tokenVersion !== payload.tokenVersion) return res.status(401).json({ error: "Session expired, please log in again" });
+    if (!profile.isAdmin) return res.status(403).json({ error: "Admin access required" });
+    req.authUser = { ...payload, isAdmin: profile.isAdmin };
+    next();
+  } catch {
+    res.status(500).json({ error: "Authentication check failed" });
+  }
 }
 
 const SAFE_PROFILE_UPDATE_FIELDS = new Set([
@@ -232,7 +246,7 @@ export function registerRoutes(app: Express) {
       }
       
       const { passwordHash: _, ...safeProfile } = profile;
-      const token = createToken(profile.id, profile.email, profile.isAdmin);
+      const token = createToken(profile.id, profile.email, profile.isAdmin, profile.tokenVersion);
       res.json({ profile: safeProfile, token });
     } catch (error: any) {
       res.status(400).json({ error: error.message });
@@ -258,7 +272,7 @@ export function registerRoutes(app: Express) {
       }
       
       const { passwordHash: _, ...safeProfile } = profile;
-      const token = createToken(profile.id, profile.email, profile.isAdmin);
+      const token = createToken(profile.id, profile.email, profile.isAdmin, profile.tokenVersion);
       res.json({ profile: safeProfile, token });
     } catch (error: any) {
       res.status(400).json({ error: error.message });
@@ -379,7 +393,8 @@ export function registerRoutes(app: Express) {
       }
 
       const newPasswordHash = await bcrypt.hash(newPassword, 12);
-      await storage.updateProfile(req.params.id, { passwordHash: newPasswordHash });
+      const newVersion = (profile.tokenVersion ?? 0) + 1;
+      await storage.updateProfile(req.params.id, { passwordHash: newPasswordHash, tokenVersion: newVersion });
 
       res.json({ success: true, message: "Password changed successfully" });
     } catch (error: any) {
@@ -1291,6 +1306,13 @@ export function registerRoutes(app: Express) {
   app.patch("/api/admin/users/:id", requireAdmin, async (req, res) => {
     try {
       const updates = req.body;
+      // If isAdmin is being changed, bump tokenVersion to invalidate existing sessions
+      if ("isAdmin" in updates) {
+        const current = await storage.getProfile(req.params.id);
+        if (current && current.isAdmin !== updates.isAdmin) {
+          updates.tokenVersion = (current.tokenVersion ?? 0) + 1;
+        }
+      }
       const profile = await storage.updateProfile(req.params.id, updates);
       if (!profile) {
         return res.status(404).json({ error: "User not found" });

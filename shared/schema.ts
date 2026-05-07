@@ -19,12 +19,14 @@ export const profiles = pgTable("profiles", {
   isAdmin: boolean("is_admin").default(false).notNull(),
   referralCode: text("referral_code").unique(), // Unique referral code for this user
   referredBy: uuid("referred_by"), // User ID of who referred this user
+  tokenVersion: integer("token_version").default(0).notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
 
 export const insertProfileSchema = createInsertSchema(profiles).omit({
   id: true,
+  tokenVersion: true,
   createdAt: true,
   updatedAt: true,
 });
