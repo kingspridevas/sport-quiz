@@ -4,7 +4,7 @@
 
 This project is a sports quiz and prize-wheel platform with a React frontend under `client/`, an Express API under `server/`, and a PostgreSQL database accessed through Drizzle. Users sign up, fund wallets, buy quiz sessions, earn points, spin for prizes, and can participate in a referral program. Production traffic is assumed to terminate over platform-managed TLS, and production runs with `NODE_ENV=production`.
 
-The highest-risk production surfaces are the Express API routes that handle identity, profile data, wallet balances, quiz state, admin actions, and payment/webhook processing. There are also Supabase client and edge-function artifacts in the repository; those should be treated as shared or external surfaces and only scanned when they are still part of the deployed flow.
+The highest-risk production surfaces are the Express API routes that handle identity, profile data, wallet balances, quiz state, admin actions, and payment/webhook processing. The active wallet-funding flow in the current frontend uses the Express payment routes, not the duplicate root-level frontend tree. There are also Supabase client and edge-function artifacts in the repository; those should be treated as shared or external surfaces and only scanned when they are still part of the deployed flow.
 
 ## Assets
 
@@ -20,7 +20,7 @@ The highest-risk production surfaces are the Express API routes that handle iden
 - **Express API to PostgreSQL** — the API has direct authority over user balances, admin flags, and payout records. Any route-level authorization flaw or unsafe business logic can become full data compromise or financial fraud.
 - **Express API to payment providers** — the server trusts Paystack and 9PSB responses to credit wallets. Webhooks and callbacks must be authenticated and bound to legitimate transactions.
 - **Authenticated user to admin boundary** — admin-only operations include reading all users, changing balances, changing points, managing winners, and controlling referrals. This boundary must be enforced on the server, not just hidden in the UI.
-- **Production app to legacy/shared Supabase artifacts** — `client/src`, `src/`, `supabase/functions`, and SQL migrations may represent legacy or side-channel production surfaces. These should only be treated as production-relevant when the deployed flow still depends on them.
+- **Production app to legacy/shared Supabase artifacts** — `src/`, `supabase/functions`, and SQL migrations may represent legacy or side-channel production surfaces. These should only be treated as production-relevant when the deployed flow still depends on them. The active production frontend is `client/src`.
 - **Dev-only boundary** — Vite dev middleware, duplicate unused frontend trees, test helpers, and local scripts are out of scope unless production reachability is demonstrated.
 
 ## Scan Anchors
@@ -30,17 +30,17 @@ The highest-risk production surfaces are the Express API routes that handle iden
 - **Public surfaces:** `/api/auth/*`, `/api/questions`, `/api/prizes`, `/api/winners/public`, payment initialization/callback/webhook routes
 - **Authenticated/business surfaces:** profile, dashboard, wallet, quiz, wheel, referral, and payment status routes
 - **Admin surfaces:** all `/api/admin/*` routes and any route that can change `isAdmin`, balances, points, winners, or referral settings
-- **Usually ignore unless proven deployed:** root-level `src/` duplicate frontend tree, ad-hoc test files, Vite-only dev behavior
+- **Usually ignore unless proven deployed:** root-level `src/` duplicate frontend tree, `supabase/functions/*`, ad-hoc test files, Vite-only dev behavior
 
 ## Threat Categories
 
 ### Spoofing
 
-The API must not trust user identity from `localStorage`, request bodies, or route parameters. All endpoints that operate on a user account or privileged action MUST bind the request to a server-verified session or token, and webhook endpoints MUST verify that the caller is the legitimate payment provider.
+The API must not trust user identity from `localStorage`, request bodies, or route parameters. All endpoints that operate on a user account or privileged action MUST bind the request to a server-verified session or token, and webhook endpoints MUST verify that the caller is the legitimate payment provider. Authentication state for privileged actions MUST be tied to current server-side account state so that admin demotion, account disabling, or password-based session revocation can take effect promptly instead of waiting for long-lived bearer tokens to expire.
 
 ### Tampering
 
-Users can influence quiz answers, session completion state, profile fields, and payment-related requests from the browser. Wallet credits, point awards, quiz outcomes, referral rewards, and admin-only settings MUST be calculated and enforced server-side from trusted state, not from client-submitted fields like `userId`, `isCorrect`, `pointsEarned`, or `isAdmin`.
+Users can influence quiz answers, session completion state, profile fields, and payment-related requests from the browser. Wallet credits, point awards, quiz outcomes, referral rewards, and admin-only settings MUST be calculated and enforced server-side from trusted state, not from client-submitted fields like `userId`, `isCorrect`, `pointsEarned`, or `isAdmin`. Payment-provider references and webhook events MUST be processed idempotently before wallet balances are mutated so replayed callbacks or duplicate provider deliveries cannot create extra credits.
 
 ### Information Disclosure
 
@@ -52,4 +52,4 @@ Public auth, payment, and gameplay endpoints can be abused if they lack request 
 
 ### Elevation of Privilege
 
-This project has a strong user/admin boundary and multiple money-moving actions. Admin routes, prize-management routes, and any route that can change balances, points, winner state, referral settings, or `isAdmin` MUST enforce server-side authorization, and state transitions MUST prevent repeated credits or replay-based privilege gain.
+This project has a strong user/admin boundary and multiple money-moving actions. Admin routes, prize-management routes, and any route that can change balances, points, winner state, referral settings, or `isAdmin` MUST enforce server-side authorization, and state transitions MUST prevent repeated credits or replay-based privilege gain. Role-bearing tokens MUST NOT remain authoritative after the underlying role has been changed on the server.
